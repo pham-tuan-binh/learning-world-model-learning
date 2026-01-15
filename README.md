@@ -1,5 +1,9 @@
 # Learning World Model Learning
 
+![Cover](./assets/root/cover.png)
+
+Note: This is still a work in progress repo. The first part on video tokenizer is in its draft and testing phase.
+
 GPT-2 from OpenAI was trained on 40GB or 10 billion tokens of data. This was the accumulation of over 8 million web pages from the internet. Let's assume for the same amount of data, we can train a comparable model for general robotics, here's how much it would cost us:
 
 - Total amount of tokens: 10 Billion.
@@ -113,35 +117,29 @@ Again, a world model is a prediction model: given the current state and action, 
 │                    Video World Model Architecture                          │
 ├────────────────────────────────────────────────────────────────────────────┤
 │                                                                            │
-│   Frame t              Action a              Frame t+1                     │
-│   ┌─────────┐         ┌───────┐             ┌─────────┐                    │
-│   │         │         │ ↑↓←→  │             │         │                    │
-│   │ 256x256 │         │       │             │ 256x256 │                    │
-│   └────┬────┘         └───┬───┘             └────▲────┘                    │
-│        │                  │                      │                         │
-│        ▼                  │                      │                         │
-│   ┌─────────┐             │                 ┌────┴────┐                    │
-│   │ Video   │             │                 │ Video   │                    │
-│   │ Encoder │             │                 │ Decoder │                    │
-│   │ (Q1)    │             │                 │         │                    │
-│   └────┬────┘             │                 └────▲────┘                    │
-│        │                  │                      │                         │
-│        ▼                  ▼                      │                         │
-│   ┌─────────┐        ┌─────────┐           ┌────┴────┐                    │
-│   │ Latent  │───────▶│ Dynamics│──────────▶│ Latent  │                    │
-│   │   z_t   │        │  Model  │           │  z_t+1  │                    │
-│   │  (Q2)   │        │         │           │         │                    │
-│   └─────────┘        └────▲────┘           └─────────┘                    │
+│   Frame t                                       Frame t+1                  │
+│   ┌─────────┐                                  ┌─────────┐                 │
+│   │         │                                  │         │                 │
+│   │ 256x256 │                                  │ 256x256 │                 │
+│   └────┬────┘                                  └────▲────┘                 │
+│        │                                            │                      │
+│        ▼                                            │                      │
+│   ┌─────────┐                                  ┌────┴────┐                 │
+│   │ Video   │                                  │ Video   │                 │
+│   │ Encoder │ ─────────── Q1 ───────────────── │ Decoder │                 │
+│   └────┬────┘                                  └────▲────┘                 │
+│        │                                            │                      │
+│        ▼                                            │                      │
+│   ┌─────────┐        ┌─────────┐              ┌────┴────┐                  │
+│   │ Latent  │───────▶│ Dynamics├─────────────▶│ Latent  │                  │
+│   │   z_t   │        │  Model  │              │  z_t+1  │                  │
+│   └─────────┘        └────▲────┘              └─────────┘                  │
+│                           │                                                │
+│                     Q4    │                                                │
 │                           │                                                │
 │                      ┌────┴────┐                                           │
 │                      │ Action  │                                           │
-│                      │ Encoder │                                           │
-│                      │  (Q3)   │                                           │
-│                      └────▲────┘                                           │
-│                           │                                                │
-│                      ┌────┴────┐                                           │
-│                      │ Latent  │◀──── Inverse Dynamics Model               │
-│                      │ Action  │      (learns from frame pairs)            │
+│                      │   a_t   │──── Q2, Q3                                │
 │                      └─────────┘                                           │
 │                                                                            │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -154,8 +152,9 @@ Out of first principles, there are a few questions we have to answer:
 | **Q1: How do we represent the video frame?** | Raw pixels (256x256x3 = 196K dims) are too high-dimensional | VAE, VQ-VAE, FSQ tokenizers |
 | **Q2: How do we represent the action?** | Actions vary across embodiments and tasks | Discrete tokens, continuous vectors, latent actions |
 | **Q3: Where do we get the action?** | Internet videos have no action labels | Inverse dynamics models, controller overlay extraction |
+| **Q4: How do we predict the next state?** | Must learn complex dynamics and interactions | Transformer, MaskGIT, diffusion models |
 
-These are the core questions of all world model training. In fact, you can understand any world model by just answering these three questions.
+These are the core questions of all world model training. In fact, you can understand any world model by just answering these four questions.
 
 ## Q1: Representing Video Frames
 
@@ -189,6 +188,27 @@ Since most videos on the internet don't have action labels, what we can do is tr
 ```
 
 To combine both of them, we train another model that takes the current frame, current action and gives the next frame. This is how **Genie** [4] works and will be primarily how I discover world models in this repository.
+
+## Q4: Predicting the Next State
+
+Given the latent representation of the current frame `z_t` and action `a_t`, how do we predict the next latent state `z_t+1`? This is the core of the world model - the dynamics function `f(z, a) = z'`.
+
+```
+   Latent z_t          Action a_t           Dynamics Model
+   ┌─────────┐         ┌─────────┐          ┌─────────────────────┐
+   │         │         │         │          │                     │
+   │ [z1..n] │ ───────▶│ [a1..k] │ ───────▶ │  f(z_t, a_t) = ?    │ ───▶ Latent z_t+1
+   │         │         │         │          │                     │
+   └─────────┘         └─────────┘          └─────────────────────┘
+```
+
+The dynamics model must learn to:
+- Understand how actions affect objects (pushing moves things)
+- Predict physical interactions (gravity, collisions)
+- Handle occlusions and reappearances
+- Generate consistent predictions over multiple steps
+
+Common architectures include **Transformers** (predict next tokens autoregressively), **MaskGIT** (parallel masked prediction), and **Diffusion models** (iterative denoising). This will be explored in detail in `3.dynamics-model/`.
 
 ## Landscape of World Model Approaches
 
