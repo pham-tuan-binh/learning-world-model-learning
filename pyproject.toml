@@ -1,0 +1,16 @@
+[project]
+name = "learning-world-model-learning"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "torch>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "matplotlib>=3.7.0",
+    "opencv-python>=4.8.0",
+    "pillow>=10.0.0",
+]
