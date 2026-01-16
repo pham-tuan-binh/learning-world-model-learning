@@ -380,6 +380,7 @@ def get_dataloader(
         num_workers=num_workers,
         pin_memory=pin_memory,
         drop_last=True,  # Drop incomplete batches
+        persistent_workers=num_workers > 0,  # Keep workers alive between epochs
     )
 
     return dataloader

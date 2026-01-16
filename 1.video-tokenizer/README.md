@@ -341,8 +341,6 @@ There's no cross-attention. The encoder and decoder only communicate through the
 ## Usage
 
 ```bash
-# Install dependencies
-uv add torch
 
 # Train with dummy data (sanity check)
 uv run python train.py --use-dummy-data --num-epochs 10
@@ -383,6 +381,49 @@ During validation:
 │   └── positional_encoding.py          # Positional Encoding
 ├── checkpoints/                        # Saved models
 └── data/                               # Datasets
+```
+
+## Run Log
+
+To validate the model, I used 3 hours of footage from BuildAI egocentric video dataset. 
+---------------------------------------
+Total Files: 77
+Total Duration (sec): 13789.656999999997
+Formatted: h m s
+-------------------
+
+I used a L4 gpu isntance on GCP with 16 cpu cores. 24 GB Vram.
+
+The following hyperparameters were used:
+```
+  uv run ./1.video-tokenizer/train.py \
+    --data-path ./1.video-tokenizer/data/ \
+    --data-type folder \
+    --batch-size 32 \
+    --embed-dim 256 \
+    --num-blocks 6 \
+    --num-epochs 3 \
+    --num-workers 16
+```
+
+```
+Using folder data from ./1.video-tokenizer/data/
+
+Setting up data...
+Found 77 videos in ./1.video-tokenizer/data/
+Total clips: 103402
+Train samples: 93061
+Val samples: 10341
+
+Creating model...
+Model parameters: 12,743,365
+Codebook size: 1024
+Device: cuda
+```
+
+You can validate and visualize the model with the following command:
+
+```
 ```
 
 ## What's next?
