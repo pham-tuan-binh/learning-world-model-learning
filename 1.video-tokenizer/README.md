@@ -421,7 +421,7 @@ Device: cuda
 
 ![Training run](../assets/1.video-tokenizer/training_run.png)
 
-The checkpoints can be found in `checkpoints/`.
+It costs me roughly 2.1 hours to train. The checkpoints can be found in `checkpoints/`.
 
 For validation, the following command is used:
 
