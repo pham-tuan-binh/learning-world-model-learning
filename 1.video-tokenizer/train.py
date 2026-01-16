@@ -35,53 +35,6 @@ from data_utils import get_dataloader, split_dataset, DummyVideoDataset
 from models import VideoTokenizer
 
 
-def get_lr(step: int, config: Config) -> float:
-    """
-    Compute learning rate with warmup and cosine decay.
-
-    Learning rate schedule:
-    1. Linear warmup: 0 -> lr over warmup_steps
-    2. Cosine decay: lr -> min_lr over remaining steps
-
-    Args:
-        step: Current training step
-        config: Configuration object
-
-    Returns:
-        Current learning rate
-    """
-    warmup_steps = config.training.warmup_steps
-    lr = config.training.learning_rate
-    min_lr = config.training.min_lr
-
-    # Warmup phase: linear increase
-    if step < warmup_steps:
-        return lr * step / warmup_steps
-
-    # After warmup: cosine decay
-    # We don't have total steps, so decay based on progress
-    # For simplicity, use epoch-based decay in the training loop
-    return lr
-
-
-def cosine_decay(lr: float, min_lr: float, progress: float) -> float:
-    """
-    Compute cosine-decayed learning rate.
-
-    Args:
-        lr: Peak learning rate
-        min_lr: Minimum learning rate
-        progress: Training progress in [0, 1]
-
-    Returns:
-        Decayed learning rate
-    """
-    # Cosine decay from lr to min_lr
-    # progress=0 -> lr, progress=1 -> min_lr
-    decay = 0.5 * (1 + math.cos(math.pi * progress))
-    return min_lr + (lr - min_lr) * decay
-
-
 def train_epoch(
     model: nn.Module,
     dataloader: torch.utils.data.DataLoader,
@@ -487,23 +440,7 @@ def main():
     for epoch in range(start_epoch, config.training.num_epochs):
         epoch_start = time.time()
 
-        # Compute learning rate with cosine decay
-        progress = epoch / config.training.num_epochs
-        lr = cosine_decay(
-            config.training.learning_rate,
-            config.training.min_lr,
-            progress,
-        )
-
-        # Apply warmup if early in training
-        if global_step < config.training.warmup_steps:
-            lr = config.training.learning_rate * global_step / config.training.warmup_steps
-
-        # Update learning rate
-        for param_group in optimizer.param_groups:
-            param_group["lr"] = lr
-
-        print(f"\nEpoch {epoch + 1}/{config.training.num_epochs} (lr={lr:.6f})")
+        print(f"\nEpoch {epoch + 1}/{config.training.num_epochs}")
         print("-" * 40)
 
         # Train
