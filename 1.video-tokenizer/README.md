@@ -385,26 +385,24 @@ During validation:
 
 ## Run Log
 
-To validate the model, I used 3 hours of footage from BuildAI egocentric video dataset. 
----------------------------------------
-Total Files: 77
-Total Duration (sec): 13789.656999999997
-Formatted: h m s
--------------------
+To validate the model, I used egocentric videos (`factory001/worker001/part000.tar`) from [BuildAI's egocentric video dataset](https://huggingface.co/datasets/builddotai/Egocentric-100K).
 
-I used a L4 gpu isntance on GCP with 16 cpu cores. 24 GB Vram.
+There are a total of 77 videos at 30fps totaling a duration of 13789s ~= 3.83hr. The resolution for each video is 456x256, which is then resized to 128x128 using opencv.resize's default interpolation.
 
-The following hyperparameters were used:
+For compute, I used a spot L4 GPU (24GB VRAM) isntance on GCP with 16 cpu cores. The following parameters were used:
+
 ```
   uv run ./1.video-tokenizer/train.py \
     --data-path ./1.video-tokenizer/data/ \
     --data-type folder \
-    --batch-size 32 \
+    --batch-size 48 \
     --embed-dim 256 \
     --num-blocks 6 \
     --num-epochs 3 \
     --num-workers 16
 ```
+
+The output of such command is here for reference:
 
 ```
 Using folder data from ./1.video-tokenizer/data/
@@ -421,10 +419,22 @@ Codebook size: 1024
 Device: cuda
 ```
 
+The checkpoints can be found in `checkpoints/`.
+
 You can validate and visualize the model with the following command:
 
 ```
+
 ```
+
+## Disclaimer/Improvements
+
+This implementation is not built for speed. A few improvements come to mind:
+
+[ ] Pre-process Video: The Dataloader decodes videos on the fly. This bottlenecks the training as the GPU needs to wait for the CPU on every step.
+[ ] Kernel Optimization: We still use vanilla attention and kernels. Speed can improve significantly by kernels such as FlashAttention.
+
+I recommend implementing these yourself to learn.
 
 ## What's next?
 
