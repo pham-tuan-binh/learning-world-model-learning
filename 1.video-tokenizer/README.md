@@ -419,7 +419,27 @@ Codebook size: 1024
 Device: cuda
 ```
 
+![Training run](../assets/1.video-tokenizer/training_run.png)
+
 The checkpoints can be found in `checkpoints/`.
+
+For validation, the following command is used:
+
+```
+uv run python validate.py --checkpoint checkpoints/best_model.pt --data-path ./data --data-type folder --save-images --nubatches 5 --num-samples 5
+```
+
+Reconstruction quality on real video frames from the validation set (PSNR ~22 dB):
+
+| | | | | |
+|---|---|---|---|---|
+| ![Sample 1](../assets/1.video-tokenizer/real-decode/sample_1.png) | ![Sample 2](../assets/1.video-tokenizer/real-decode/sample_2.png) | ![Sample 3](../assets/1.video-tokenizer/real-decode/sample_3.png) | ![Sample 4](../assets/1.video-tokenizer/real-decode/sample_4.png) | ![Sample 5](../assets/1.video-tokenizer/real-decode/sample_5.png) |
+
+What happens when we feed random noise through the tokenizer? The decoder produces blurry, averaged outputs since noise doesn't map to meaningful tokens:
+
+| | | | | |
+|---|---|---|---|---|
+| ![Sample 1](../assets/1.video-tokenizer/noise-decode/sample_1.png) | ![Sample 2](../assets/1.video-tokenizer/noise-decode/sample_2.png) | ![Sample 3](../assets/1.video-tokenizer/noise-decode/sample_3.png) | ![Sample 4](../assets/1.video-tokenizer/noise-decode/sample_4.png) | ![Sample 5](../assets/1.video-tokenizer/noise-decode/sample_5.png) |
 
 ### Using the Checkpoints
 
