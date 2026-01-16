@@ -193,6 +193,7 @@ name = "learning-world-model-learning"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "matplotlib" },
     { name = "opencv-python" },
     { name = "torch" },
 ]
@@ -206,6 +207,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "matplotlib", specifier = ">=3.10.8" },
     { name = "matplotlib", marker = "extra == 'dev'", specifier = ">=3.7.0" },
     { name = "opencv-python", specifier = ">=4.12.0.88" },
     { name = "opencv-python", marker = "extra == 'dev'", specifier = ">=4.8.0" },
