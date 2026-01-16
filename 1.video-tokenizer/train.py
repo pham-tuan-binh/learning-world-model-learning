@@ -230,7 +230,7 @@ def load_checkpoint(
     optimizer: torch.optim.Optimizer = None,
 ) -> tuple:
     """Load training checkpoint."""
-    checkpoint = torch.load(path, map_location="cpu")
+    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
 
     model.load_state_dict(checkpoint["model_state_dict"])
     if optimizer is not None:

@@ -421,10 +421,26 @@ Device: cuda
 
 The checkpoints can be found in `checkpoints/`.
 
-You can validate and visualize the model with the following command:
+### Using the Checkpoints
 
+The checkpoint files are stored using Git LFS. To download them:
+
+```bash
+# Install git-lfs if you haven't already
+# Ubuntu/Debian: sudo apt install git-lfs
+# macOS: brew install git-lfs
+
+# Initialize git-lfs and pull the files
+git lfs install
+git lfs pull
 ```
 
+**Security note:** PyTorch checkpoint files (`.pt`) use pickle serialization, which can execute arbitrary code when loaded. Only load checkpoints from sources you trust. The code uses `weights_only=False` in `torch.load()` to load the config object stored alongside the weights.
+
+You can validate and visualize the model with the following command:
+
+```bash
+uv run python validate.py --checkpoint checkpoints/best_model.pt --data-path ./data --save-images
 ```
 
 ## Disclaimer/Improvements

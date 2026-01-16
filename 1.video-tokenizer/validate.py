@@ -60,7 +60,7 @@ def load_model(checkpoint_path: Path, device: str = "cpu") -> tuple:
     Returns:
         (model, config)
     """
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     # Get config from checkpoint
     config = checkpoint.get("config")
