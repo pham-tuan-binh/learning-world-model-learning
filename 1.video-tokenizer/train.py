@@ -113,6 +113,12 @@ def train_epoch(
     num_batches = 0
     all_indices = []
 
+    # Timing
+    last_log_time = time.time()
+    last_log_step = global_step
+    steps_per_epoch = len(dataloader)
+    total_steps = config.training.num_epochs * steps_per_epoch
+
     # Determine device type for autocast
     device_type = "cuda" if "cuda" in device else "cpu"
     use_amp = config.use_amp and device_type == "cuda"  # AMP only on CUDA
@@ -147,14 +153,52 @@ def train_epoch(
         all_indices.append(indices.detach().cpu())
         global_step += 1
 
+        # Update learning rate per step (warmup + cosine decay)
+        if global_step < config.training.warmup_steps:
+            # Linear warmup: 0 -> lr
+            lr = config.training.learning_rate * global_step / config.training.warmup_steps
+        else:
+            # Cosine decay after warmup
+            progress = (global_step - config.training.warmup_steps) / max(1, total_steps - config.training.warmup_steps)
+            progress = min(1.0, progress)  # Clamp to [0, 1]
+            lr = config.training.min_lr + (config.training.learning_rate - config.training.min_lr) * 0.5 * (1 + math.cos(math.pi * progress))
+
+        for param_group in optimizer.param_groups:
+            param_group["lr"] = lr
+
         # Logging
         if global_step % config.training.log_interval == 0:
             avg_loss = total_loss / num_batches
+
+            # Calculate timing
+            now = time.time()
+            steps_since_log = global_step - last_log_step
+            time_per_interval = now - last_log_time
+            steps_per_sec = steps_since_log / time_per_interval if time_per_interval > 0 else 0
+
+            # Estimated time remaining
+            remaining_steps = total_steps - global_step
+            eta_seconds = remaining_steps / steps_per_sec if steps_per_sec > 0 else 0
+            eta_minutes = eta_seconds / 60
+            eta_hours = eta_seconds / 3600
+
+            if eta_hours >= 1:
+                eta_str = f"{eta_hours:.1f}h"
+            else:
+                eta_str = f"{eta_minutes:.1f}m"
+
             print(
-                f"  Step {global_step} | "
+                f"  Step {global_step}/{total_steps} | "
                 f"Loss: {loss.item():.4f} | "
-                f"Avg Loss: {avg_loss:.4f}"
+                f"Avg Loss: {avg_loss:.4f} | "
+                f"LR: {lr:.6f} | "
+                f"{time_per_interval:.1f}s/100 | "
+                f"ETA: {eta_str}"
             )
+
+            # Update timing trackers
+            last_log_time = now
+            last_log_step = global_step
 
     # Compute codebook usage
     all_indices = torch.cat(all_indices, dim=0).flatten()
