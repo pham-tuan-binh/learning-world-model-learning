@@ -4,7 +4,7 @@ The first question we are going to answer in this repository is **how to represe
 
 In language models, we convert text into tokens i.e. discrete integers that the model can process. A sentence like "Hello world" becomes something like `[15496, 995]`. This works because language is inherently discrete and can be separated into [multiple chunks or components](https://tiktokenizer.vercel.app/).
 
-But video is continuous. A single 128×128 RGB frame has 128\*128\*3 = 49,152 floating point values. If we were to train a model naively on each frame's raw data, not only the model will blow up in terms of size (imagine a how much weight it would take for a 128x128x3 vector to connect to 1000 neuron) but it will fail to learn the concepts within an image (since the number of dimensions is too vast to represent).
+But video is continuous. A single 128×128 RGB frame has `128*128*3 = 49,152` floating point values. If we were to train a model naively on each frame's raw data, not only will the model blow up in terms of size (imagine how much weight it would take for a `128x128x3` vector to connect to 1000 neurons) but it will fail to learn the concepts within an image (since the number of dimensions is too vast to represent).
 
 How do we represent a video in a form that a model can process? We briefly talked through this in the introduction of this repository: **with discrete tokens or a continuous latent vector**.
 
@@ -14,8 +14,8 @@ In this guide, we'll go through the former method, discrete tokens, with a **vid
 
 To briefly recap, we want to build a world model that predicts future video frames, but feeding raw pixels to a transformer is problematic:
 
-1. **Too high dimensional**: A 128×128×3 frame = 49,152 values. Processing 4 frames means 196,608 values per sample.
-2. **No semantic structure**: Pixels don't capture meaning nor timing i.e. a slight shift in lighting changes all pixel values but the scene is the same, the scene is the same but the time is different.
+1. **Too high dimensional**: A `128×128×3` frame = 49,152 values. Processing 4 frames means 196,608 values per sample.
+2. **No semantic structure**: Pixels don't capture meaning nor timing, i.e., a slight shift in lighting changes all pixel values but the scene is the same, the scene is the same but the time is different.
 
 Assuming you have already worked with [transformers](https://jalammar.github.io/illustrated-transformer/), take 5 minutes before continuing to form research questions: how would you tackle these problems yourself, what kind of questions do you need to answer to solve these problems. 
 
@@ -32,9 +32,9 @@ Out of first principles, to encode and decode a video frame through tokens, seve
 
 ### 1. How do we reduce the dimensionality?
 
-Inside the 2021 hallmark paper of computer vision, ["An Image Is Worth 16x16 Words: Transformers For Image Recognition At Scale"](https://arxiv.org/abs/2010.11929), Dosovitskiy et al introduced a novel method to use a transformer for images.
+Inside the 2021 hallmark paper of computer vision, ["An Image Is Worth 16x16 Words: Transformers For Image Recognition At Scale"](https://arxiv.org/abs/2010.11929), Dosovitskiy et al. introduced a novel method to use a transformer for images.
 
-Instead of processing individual pixels, they divided each frame into patches. A 128×128 frame would be divided into 256 8x8 patches (128^2/8^2=256). Each patch is then projected to a 128-dimensional vector.
+Instead of processing individual pixels, they divided each frame into patches. A 128×128 frame would be divided into 256 8x8 patches (`128^2/8^2=256`). Each patch is then projected to a 128-dimensional vector.
 
 The intuition: a small patch of an image (8×8 = 64 pixels) can be summarized by a single vector that captures "what's in this patch." Looking into the code below, we can understand how this process is implemented.
 
@@ -62,11 +62,11 @@ class PatchEmbedding(nn.Module):
         return x.view(B, T, 256, 128)  # (B, T, N, E)
 ```
 
-The math here is simple. We slide a convolution kernel across each channel in an image then combine the results to create a single channel in the output. Since we want to have 256 dimensions or channels per patch, we would use 256\*3=768 kernels. A Conv2D with `kernel_size=stride=patch_size` can extract non-overlapping patches and project them in a single operation. 
+The math here is simple. We slide a convolution kernel across each channel in an image then combine the results to create a single channel in the output. Since we want to have 256 dimensions or channels per patch, we would use `256*3=768` kernels. A Conv2D with `kernel_size=stride=patch_size` can extract non-overlapping patches and project them in a single operation.
 
-We go from an image of the following dimension (128, 128, 3) to (16, 16, 128) or (256, 128).
+We go from an image of the following dimension `(128, 128, 3)` to `(16, 16, 128)` or `(256, 128)`.
 
-**Add a visualiaztion here. On the left, the input image. On the right, one channel of the output image.**
+**Add a visualization here. On the left, the input image. On the right, one channel of the output image.**
 
 To learn more about the intuition of convolution, I would recommend not going into the Convolutional Neural Network itself, but understand [its mathematical concept](https://betterexplained.com/articles/intuitive-convolution/). Christopher Olah also has some [great visualizations on CNN](https://colah.github.io/).
 
@@ -74,11 +74,11 @@ To learn more about the intuition of convolution, I would recommend not going in
 
 Before giving the compressed video frame to a transformer, we need to think about what the frame already has in terms of information. It might be able to contain contextual information such as this patch contains a leaf, but it doesn't contain where is that leaf in the frame.
 
-So we need to add some sort of positional encoding. 
+So we need to add some sort of positional encoding.
 
-For convenience, let's say our image is the following flat vector [0, 0, 0, 0]. Naively, we can add the index of position directly to the vector i.e. [0,1,2,3]. However, as the size of image increase, we would need to use indexes to the length of 256\*128-1=32767. This would pose many problems e.g exploding gradients to scale the distribution of position to another different distribution later in the pipeline.
+For convenience, let's say our image is the following flat vector `[0, 0, 0, 0]`. Naively, we can add the index of position directly to the vector, i.e., `[0,1,2,3]`. However, as the size of image increases, we would need to use indexes to the length of `256*128-1=32767`. This would pose many problems, e.g., exploding gradients to scale the distribution of position to another different distribution later in the pipeline.
 
-In the most important paper of modern AI, ["Attenttion Is All You Need"](https://arxiv.org/html/1706.03762v7), Vaswani et al introduced the sinusoidal encoding:
+In the most important paper of modern AI, ["Attention Is All You Need"](https://arxiv.org/html/1706.03762v7), Vaswani et al. introduced the sinusoidal encoding:
 
 ```
 PE(pos, 2i)   = sin(pos / 10000^(2i/d))
@@ -115,23 +115,23 @@ class SpatioTemporalPositionalEncoding(nn.Module):
         return x
 ```
 
-In the classical paper, sinusoidal encoding was used to encode position for one dimension sequence of tokens. However, in a video, we have 3 dimensions: width, height, time. How do we make it work?
+In the classical paper, sinusoidal encoding was used to encode position for one-dimensional sequences of tokens. However, in a video, we have 3 dimensions: width, height, time. How do we make it work?
 
-The trick here is to divide embedding into 3 parts `128//3`. The first part is to encode x position, second for y position, and third for time.
+The trick here is to divide the embedding into 3 parts (`128//3`). The first part is to encode x position, the second for y position, and the third for time.
 
-For example, to encode x position, we would use a sinusoidal encoding with an embedding dimension of 128//3=42 and position from 0 to 15. To encode time, we would use a sinusoidal encoding with an embedding dimension of 128-42\*2=44 and position of the number of frames we include per sample.
+For example, to encode x position, we would use a sinusoidal encoding with an embedding dimension of `128//3=42` and position from 0 to 15. To encode time, we would use a sinusoidal encoding with an embedding dimension of `128-42*2=44` and position of the number of frames we include per sample.
 
 We then combine these encodings to a single embedding and add it to each patch.
 
 ### 3. How do we learn relationships between parts of a frame?
 
-Now we have 256 patch embeddings per frame. Even though each patch knows where it is, they were processed independently. The top-left patch doesn't know anything about the bottom-right patch. We need them to communicate because if a patch represents a wall then it's also very likely that its surrounding patches also represent a wall. Capturing the spatial relationship is crucial to representing an frame.
+Now we have 256 patch embeddings per frame. Even though each patch knows where it is, they were processed independently. The top-left patch doesn't know anything about the bottom-right patch. We need them to communicate because if a patch represents a wall then it's also very likely that its surrounding patches also represent a wall. Capturing the spatial relationship is crucial to representing a frame.
 
 This is what **self-attention** does. Each patch looks at all other patches and computes a weighted sum based on relevance. "How much should I pay attention to each other patch?"
 
-Since the amount of material on attention is (abundant)[https://jalammar.github.io/illustrated-transformer/], I'm not going to write about it anymore. However, it's important to note that unlike attention in LLM, our spatial attention has no causal mask. 
+Since the amount of material on attention is [abundant](https://jalammar.github.io/illustrated-transformer/), I'm not going to write about it anymore. However, it's important to note that unlike attention in LLMs, our spatial attention has no causal mask. 
 
-The intuition behind this is simple. In a sentence, the next word is dependent on the previous word. For the prefill and training stage to work in an LLM, we need to introduce a causal mask so that future tokens won't affect past tokens. However, such relation doesn't really exist in a single image. One part of the image attends to all other part of the image. After all, they are captured at the same time.
+The intuition behind this is simple. In a sentence, the next word is dependent on the previous word. For the prefill and training stage to work in an LLM, we need to introduce a causal mask so that future tokens won't affect past tokens. However, such a relation doesn't really exist in a single image. One part of the image attends to all other parts of the image. After all, they are captured at the same time.
 
 From [models/st_transformer.py](models/st_transformer.py):
 
@@ -234,19 +234,19 @@ Jokes aside, TinyWorlds' implementation of genie leveraged this so I wanted to w
 
 ### 6. How do we discretize?
 
-Let's recap, after the patch embedding, position encoding, and attention, we still have a tensor of shape (256, 128) to represent a frame. And if your intuition serves you right, you would ask "isn't this just a continuous embedding of each patch".
+Let's recap: after the patch embedding, position encoding, and attention, we still have a tensor of shape `(256, 128)` to represent a frame. And if your intuition serves you right, you would ask "isn't this just a continuous embedding of each patch?"
 
 We need discrete tokens.
 
 The classic approach is [**VQ-VAE**](https://arxiv.org/abs/1711.00937): learn a codebook of vectors, find the nearest neighbor for each embedding. But VQ-VAE suffers from codebook collapse (some tokens never get used).
 
-**FSQ** is simpler. We just round each dimension to a finite set of values. 
+**FSQ** is simpler. We just round each dimension to a finite set of values.
 
-Let's say we want our patch to be represented by a token, which is represented by a code in a codebook. FSQ takes our tensor (256, 128), turns it to (256, latent\_dim) with a FNN. Now, each patch contains latent\_dim values.
+Let's say we want our patch to be represented by a token, which is represented by a code in a codebook. FSQ takes our tensor `(256, 128)`, turns it to `(256, latent_dim)` with an FNN. Now, each patch contains `latent_dim` values.
 
-These values are normalized to -1 to 1 range. We divide this range into n bins, then convert each value to the index of the bin it's in.
+These values are normalized to a -1 to 1 range. We divide this range into n bins, then convert each value to the index of the bin it's in.
 
-For example, if we have `latent_dim=3` and `num_bins=3`, a vector of [0.1, 0.4, 0.8] will be turned to [0, 1, 2]. The vector is then treated as a n-base number and converted to decimal: 0\*1 + 1\*3 + 2\*9 = 21.
+For example, if we have `latent_dim=3` and `num_bins=3`, a vector of `[0.1, 0.4, 0.8]` will be turned to `[0, 1, 2]`. The vector is then treated as an n-base number and converted to decimal: `0*1 + 1*3 + 2*9 = 21`.
 
 From [models/fsq.py](models/fsq.py):
 
@@ -279,26 +279,26 @@ class FiniteScalarQuantizer(nn.Module):
         return z_q, indices  # indices are integers in [0, 1023]
 ```
 
-With `latent_dim=5` and `num_bins=4` in the above snippet, we get 4^5 = 1024 possible tokens.
+With `latent_dim=5` and `num_bins=4` in the above snippet, we get `4^5 = 1024` possible tokens.
 
 ### 7. How do we reconstruct pixels from tokens?
 
-We have covered how to turn a frame into a token, but how can we train the model to do such thing. As mentioned before, we treat this as an autoencoder. We have built the encoder, and now we need to build the decoder.
+We have covered how to turn a frame into a token, but how can we train the model to do such a thing? As mentioned before, we treat this as an autoencoder. We have built the encoder, and now we need to build the decoder.
 
 The model is then trained by minimizing the Mean Squared Error loss (or L2 loss) between the original image and reconstructed image.
 
-But how can we go from tokens to pixels?. Step-by-step, we can imagine the process as following:
+But how can we go from tokens to pixels? Step-by-step, we can imagine the process as follows:
 
 1. Project from latent dim (5) back to embedding dim (128)
 2. Add positional encoding.
 3. Add attention through SpatioTemporalTransformer (without the causal mask, since at this step we have all the images already)
 4. Convert patch embeddings back to pixels.
 
-While the first 3 steps is straight forward, the tricky part is how to upscale from the patches to a full image. We have 256 embeddings of size 128 and need a 128×128×3 image.
+While the first 3 steps are straightforward, the tricky part is how to upscale from the patches to a full image. We have 256 embeddings of size 128 and need a `128×128×3` image.
 
 In a naive approach, we can reshape each embedding to 8×8×3 pixels through deconvolution. But this creates [blocky artifacts at patch boundaries](https://distill.pub/2016/deconv-checkerboard/) because convolution kernels cause uneven overlap between patches.
 
-To solve this, Shi et al introduced [**pixel shuffle**](https://arxiv.org/abs/1609.05158). An 8x8 patch is supposed to have 192 values. At the moment, we have 128 values. What if we project it through a linear layer from 128 to 192, then rearrange the 192 values to the patch's rgb values.
+To solve this, Shi et al. introduced [**pixel shuffle**](https://arxiv.org/abs/1609.05158). An 8x8 patch is supposed to have 192 values. At the moment, we have 128 values. What if we project it through a linear layer from 128 to 192, then rearrange the 192 values to the patch's RGB values?
 
 From [models/patch_embed.py](models/patch_embed.py):
 
@@ -439,7 +439,7 @@ To validate the model, I used egocentric videos (`factory001/worker001/part000.t
 
 There are a total of 77 videos at 30fps totaling a duration of 13789s ~= 3.83hr. The resolution for each video is 456x256, which is then resized to 128x128 using opencv.resize's default interpolation.
 
-For compute, I used a spot L4 GPU (24GB VRAM) isntance on GCP with 16 cpu cores. The following parameters were used:
+For compute, I used a spot L4 GPU (24GB VRAM) instance on GCP with 16 CPU cores. The following parameters were used:
 
 ```
   uv run ./1.video-tokenizer/train.py \
@@ -471,7 +471,7 @@ Device: cuda
 
 ![Training run](../assets/1.video-tokenizer/training_run.png)
 
-It costs me roughly 2.1 hours to train. The checkpoints can be found in `checkpoints/`.
+It cost me roughly 2.1 hours to train. The checkpoints can be found in `checkpoints/`.
 
 For validation, the following command is used:
 
@@ -517,8 +517,8 @@ uv run python validate.py --checkpoint checkpoints/best_model.pt --data-path ./d
 
 This implementation is not built for speed. A few improvements come to mind:
 
-[ ] Pre-process Video: The Dataloader decodes videos on the fly. This bottlenecks the training as the GPU needs to wait for the CPU on every step.
-[ ] Kernel Optimization: We still use vanilla attention and kernels. Speed can improve significantly by kernels such as FlashAttention.
+- [ ] Pre-process Video: The Dataloader decodes videos on the fly. This bottlenecks the training as the GPU needs to wait for the CPU on every step.
+- [ ] Kernel Optimization: We still use vanilla attention and kernels. Speed can improve significantly with kernels such as FlashAttention.
 
 I recommend implementing these yourself to learn.
 
@@ -530,7 +530,10 @@ Given the tokens for frames 1-4 and an action, can we predict the tokens for fra
 
 ## References
 
-- [Genie: Generative Interactive Environments](https://arxiv.org/abs/2402.15391)
-- [Language Model Beats Diffusion - Tokenizer is Key](https://arxiv.org/abs/2310.05737) (FSQ paper)
-- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)
-- [An Image is Worth 16x16 Words](https://arxiv.org/abs/2010.11929) (ViT)
+- **Genie** - Bruce et al., "Genie: Generative Interactive Environments", Google DeepMind, 2024. [arXiv:2402.15391](https://arxiv.org/abs/2402.15391)
+- **FSQ** - Mentzer et al., "Finite Scalar Quantization: VQ-VAE Made Simple", ICLR 2024. [arXiv:2310.05737](https://arxiv.org/abs/2310.05737)
+- **Transformer** - Vaswani et al., "Attention Is All You Need", NeurIPS 2017. [arXiv:1706.03762](https://arxiv.org/abs/1706.03762)
+- **ViT** - Dosovitskiy et al., "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale", ICLR 2021. [arXiv:2010.11929](https://arxiv.org/abs/2010.11929)
+- **Pixel Shuffle** - Shi et al., "Real-Time Single Image and Video Super-Resolution Using an Efficient Sub-Pixel Convolutional Neural Network", CVPR 2016. [arXiv:1609.05158](https://arxiv.org/abs/1609.05158)
+- **VQ-VAE** - van den Oord et al., "Neural Discrete Representation Learning", NeurIPS 2017. [arXiv:1711.00937](https://arxiv.org/abs/1711.00937)
+- **SwiGLU** - Shazeer, "GLU Variants Improve Transformer", 2020. [arXiv:2002.05202](https://arxiv.org/abs/2002.05202)
