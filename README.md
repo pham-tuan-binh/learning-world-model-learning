@@ -2,7 +2,7 @@
 
 ![Cover](./assets/root/cover.png)
 
-GPT-2 from OpenAI was trained on 40GB or 10 billion tokens of data. This was the accumulation of over 8 million web pages from the internet. Let's assume for the same amount of data, we can train a comparable model for general robotics, here's how much it would cost us:
+GPT-2 from OpenAI was trained on [40GB or 10 billion tokens of data](https://finbarr.ca/five-years-of-gpt-progress/). This was the accumulation of over 8 million web pages from the internet. Let's assume for the same amount of data, we can train a comparable model for general robotics, here's how much it would cost us:
 
 - Total amount of tokens: 10 Billion.
 - Tokens per hour of data collection (assumption based on current tokenization methods): `500,000` tokens/hour.
