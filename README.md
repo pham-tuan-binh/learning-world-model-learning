@@ -2,8 +2,6 @@
 
 ![Cover](./assets/root/cover.png)
 
-Note: This is still a work in progress repo. The first part on video tokenizer is in its draft and testing phase.
-
 GPT-2 from OpenAI was trained on 40GB or 10 billion tokens of data. This was the accumulation of over 8 million web pages from the internet. Let's assume for the same amount of data, we can train a comparable model for general robotics, here's how much it would cost us:
 
 - Total amount of tokens: 10 Billion.
@@ -174,6 +172,8 @@ To do this, we need to train a **video encoder** which turns raw video frames in
    └─────────────┘             └─────────────┘                 └─────────────┘
 ```
 
+The in-depth article to answer this question can be found [here](1.video-tokenizer).
+
 ## Q2 & Q3: Representing and Obtaining Actions
 
 Since most videos on the internet don't have action labels, what we can do is train a model that takes the current frame and next frame and outputs the action. This is called an **Inverse Dynamics Model (IDM)**. The action can be represented either as a discrete vector or a continuous vector.
@@ -188,6 +188,8 @@ Since most videos on the internet don't have action labels, what we can do is tr
 ```
 
 To combine both of them, we train another model that takes the current frame, current action and gives the next frame. This is how **Genie** [4] works and will be primarily how I discover world models in this repository.
+
+The in-depth article to answer this question will be released in February.
 
 ## Q4: Predicting the Next State
 
@@ -209,6 +211,8 @@ The dynamics model must learn to:
 - Generate consistent predictions over multiple steps
 
 Common architectures include **Transformers** (predict next tokens autoregressively), **MaskGIT** (parallel masked prediction), and **Diffusion models** (iterative denoising). This will be explored in detail in `3.dynamics-model`.
+
+The in-depth article to answer this question will be released in February.
 
 ## Landscape of World Model Approaches
 
