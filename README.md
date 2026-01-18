@@ -284,7 +284,21 @@ Inside each folder, you'll find:
 
 The folder also contains a README which details my thinking process, sources, and intuition. Keep in mind, this is not written for optimization. You'll find a lot of redundant code and bare minimum code. It serves the purpose of building intuition.
 
-The repository uses `uv` to handle dependencies. It's also optimized for Claude Code. I will share my configurations and CLAUDE.md within this repository. I recommend pairing this repository with an agent and ask questions along the way.
+The repository uses `uv` to handle dependencies. 
+
+# Agentic Learning
+
+This repository is optimized for Claude Code. 
+
+I included my CLAUDE.md within this repository. It is instructed to replicate my way of writing and reasoning. I recommend pairing this repository with an agent and ask questions along the way.
+
+I truly believe in a world where every course is included with an agent that can converse in the instructor's prose. Hopefully, you'll find such experience interacting with this codebase.
+
+# Credits
+
+The writing is completely written by me with exception of some visualizations handled by Claude Code. The code is partially written by me in parts where it matters, the rest agent handles. For example, I used Claude Code to clean up and add clear comments so anyone can understand how things work easily.
+
+[TinyWorlds](https://github.com/AlmondGod/tinyworlds) by @AlmondGod inspired me greatly to do this write up and build a world model from scratch.
 
 ---
 

@@ -66,7 +66,7 @@ The math here is simple. We slide a convolution kernel across each channel in an
 
 We go from an image of the following dimension `(128, 128, 3)` to `(16, 16, 128)` or `(256, 128)`.
 
-**Add a visualization here. On the left, the input image. On the right, one channel of the output image.**
+![Patch Embedding: input image to patch embeddings](../assets/1.video-tokenizer/patch_embedding.png)
 
 To learn more about the intuition of convolution, I would recommend not going into the Convolutional Neural Network itself, but understand [its mathematical concept](https://betterexplained.com/articles/intuitive-convolution/). Christopher Olah also has some [great visualizations on CNN](https://colah.github.io/).
 
@@ -91,7 +91,7 @@ d: embedding dimension
 
 If you have taken a bit of signal processing, you can see what's the inspiration of this. By using different frequencies, they manage to capture different positions or scales of signal while limiting it to a -1 to 1 range. Low frequencies distinguish "left vs right", while high frequencies distinguish "this pixel vs neighboring pixel."
 
-**Add a visulization here of the model output**
+![Positional Encoding: sinusoidal patterns for x, y, and time](../assets/1.video-tokenizer/positional_encoding.png)
 
 From [models/positional_encoding.py](models/positional_encoding.py):
 
@@ -280,6 +280,8 @@ class FiniteScalarQuantizer(nn.Module):
 ```
 
 With `latent_dim=5` and `num_bins=4` in the above snippet, we get `4^5 = 1024` possible tokens.
+
+![FSQ Quantization: continuous to discrete token mapping](../assets/1.video-tokenizer/fsq_quantization.png)
 
 ### 7. How do we reconstruct pixels from tokens?
 
