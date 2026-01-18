@@ -14,7 +14,7 @@ GPT-2 from OpenAI was trained on 40GB or 10 billion tokens of data. This was the
 
 We used several generous assumptions here, especially for the equivalence of tokens between text and modalities such as video and most importantly a similar scaling law between robotics and LLM. It's also notable that most LLM models nowadays are trained on much larger datasets such as FineWeb (~15 Trillion Tokens) and of much higher diversity.
 
-To scale real world data collection to such point would require an enormous effort and capital in the ranges of billions. Collecting diverse data in the real world is not simply deploying your robot everywhere. It also requires building the infrastructure necessary for such task: network infrastructure, equipment infrastructure.
+To scale real world data collection to such point would require enormous efforts and capital in the rang of billions. Collecting diverse data in the real world is not simply deploying your robot everywhere. It also requires building the infrastructure necessary for such task: network infrastructure, equipment infrastructure.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
