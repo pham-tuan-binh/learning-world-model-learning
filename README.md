@@ -7,10 +7,10 @@ Note: This is still a work in progress repo. The first part on video tokenizer i
 GPT-2 from OpenAI was trained on 40GB or 10 billion tokens of data. This was the accumulation of over 8 million web pages from the internet. Let's assume for the same amount of data, we can train a comparable model for general robotics, here's how much it would cost us:
 
 - Total amount of tokens: 10 Billion.
-- Tokens per hour of data collection (assumption based on current tokenization methods): 500,000 tokens/hour.
-- Total hour: 10,000,000,000 / 500,000 = 20,000 hours = 2,500 days (assuming 8 hours/day) ~= 10 years (with 260 working_day/year)
-- Cost per hour (minimum wage in US): 7.25 dollars/hour + Misc Cost = 20 dollars/hour
-- Total cost: 400,000$ ~= 0.5 million dollars
+- Tokens per hour of data collection (assumption based on current tokenization methods): `500,000` tokens/hour.
+- Total hours: `10,000,000,000 / 500,000 = 20,000` hours = `2,500` days (assuming 8 hours/day) ~= 10 years (with 260 working days/year)
+- Cost per hour (minimum wage in US): $7.25/hour + Misc Cost = $20/hour
+- Total cost: ~$400,000 ~= 0.5 million dollars
 
 We used several generous assumptions here, especially for the equivalence of tokens between text and modalities such as video and most importantly a similar scaling law between robotics and LLM. It's also notable that most LLM models nowadays are trained on much larger datasets such as FineWeb (~15 Trillion Tokens) and of much higher diversity.
 
@@ -102,7 +102,7 @@ Instead of relying on teleoperation data and imitation learning, what if we just
 
 This would allow us to collect data at scale at a fraction of the cost, since we can leverage real world data such as YouTube videos to learn the dynamics of the real world.
 
-Naturally, to train a world model like this, we would need states of the real world and the action that is being done between frames. Several questions arise: how do we even get the action from raw video frames, how do we even convert such action to the target embodiment of robots, would a human video be converted to robot video, etc?
+Naturally, to train a world model like this, we would need states of the real world and the action that is being done between frames. Several questions arise: how do we even get the action from raw video frames, how do we even convert such actions to the target embodiment of robots, would a human video be converted to robot video, etc?
 
 Such questions will be slowly answered through this GitHub repo.
 
@@ -149,7 +149,7 @@ Out of first principles, there are a few questions we have to answer:
 
 | Question | Challenge | Common Solutions |
 |----------|-----------|------------------|
-| **Q1: How do we represent the video frame?** | Raw pixels (256x256x3 = 196K dims) are too high-dimensional | VAE, VQ-VAE, FSQ tokenizers |
+| **Q1: How do we represent the video frame?** | Raw pixels (`256x256x3` = 196K dims) are too high-dimensional | VAE, VQ-VAE, FSQ tokenizers |
 | **Q2: How do we represent the action?** | Actions vary across embodiments and tasks | Discrete tokens, continuous vectors, latent actions |
 | **Q3: Where do we get the action?** | Internet videos have no action labels | Inverse dynamics models, controller overlay extraction |
 | **Q4: How do we predict the next state?** | Must learn complex dynamics and interactions | Transformer, MaskGIT, diffusion models |
@@ -158,13 +158,13 @@ These are the core questions of all world model training. In fact, you can under
 
 ## Q1: Representing Video Frames
 
-For videos, we can just give a MLP a large pixel array. But this has proven to be inefficient and outright makes training at scale impossible. For first principle intuition, when you recall a memory, you don't recall the scene down to each receptor in your eye, you recall the characteristics of such scene.
+For videos, we can just give an MLP a large pixel array. But this has proven to be inefficient and outright makes training at scale impossible. For first principle intuition, when you recall a memory, you don't recall the scene down to each receptor in your eye, you recall the characteristics of such scene.
 
 To do this, we need to train a **video encoder** which turns raw video frames into a vector of characteristics. We can do this with a VAE (Variational Autoencoder) or its discrete variants like VQ-VAE and FSQ.
 
 ```
    Raw Frame                    Latent Space                    Reconstructed
-   (196,608 dims)              (e.g., 256 dims)                 (196,608 dims)
+   (196,608 dims)               (e.g., 256 dims)                (196,608 dims)
 
    ┌─────────────┐             ┌─────────────┐                 ┌─────────────┐
    │ ░░▓▓████░░  │   Encode    │             │    Decode       │ ░░▓▓████░░  │
@@ -191,7 +191,7 @@ To combine both of them, we train another model that takes the current frame, cu
 
 ## Q4: Predicting the Next State
 
-Given the latent representation of the current frame `z_t` and action `a_t`, how do we predict the next latent state `z_t+1`? This is the core of the world model - the dynamics function `f(z, a) = z'`.
+Given the latent representation of the current frame `z_t` and action `a_t`, how do we predict the next latent state `z_{t+1}`? This is the core of the world model - the dynamics function `f(z, a) = z'`.
 
 ```
    Latent z_t          Action a_t           Dynamics Model
@@ -208,7 +208,7 @@ The dynamics model must learn to:
 - Handle occlusions and reappearances
 - Generate consistent predictions over multiple steps
 
-Common architectures include **Transformers** (predict next tokens autoregressively), **MaskGIT** (parallel masked prediction), and **Diffusion models** (iterative denoising). This will be explored in detail in `3.dynamics-model/`.
+Common architectures include **Transformers** (predict next tokens autoregressively), **MaskGIT** (parallel masked prediction), and **Diffusion models** (iterative denoising). This will be explored in detail in `3.dynamics-model`.
 
 ## Landscape of World Model Approaches
 
