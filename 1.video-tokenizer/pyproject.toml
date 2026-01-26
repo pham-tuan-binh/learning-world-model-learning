@@ -1,0 +1,16 @@
+[project]
+name = "video-tokenizer"
+version = "0.1.0"
+description = "Video tokenizer using FSQ and spatio-temporal transformers"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.0.0",
+    "einops>=0.7.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["video_tokenizer"]

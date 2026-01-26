@@ -26,8 +26,8 @@ import torch
 import torch.nn.functional as F
 
 from config import Config
-from data_utils import DummyVideoDataset, get_dataloader
-from models import VideoTokenizer
+from video_tokenizer import DummyVideoDataset, get_dataloader
+from video_tokenizer import VideoTokenizer
 
 
 def compute_psnr(mse: float, max_val: float = 1.0) -> float:

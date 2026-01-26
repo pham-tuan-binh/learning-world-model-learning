@@ -31,8 +31,8 @@ import torch.nn as nn
 from torch.amp import GradScaler, autocast
 
 from config import Config, get_config
-from data_utils import get_dataloader, split_dataset, DummyVideoDataset
-from models import VideoTokenizer
+from video_tokenizer import get_dataloader, split_dataset, DummyVideoDataset
+from video_tokenizer import VideoTokenizer
 
 
 def train_epoch(
