@@ -1,18 +1,17 @@
 [project]
 name = "learning-world-model-learning"
 version = "0.1.0"
-description = "Add your description here"
+description = "Educational repository for exploring world models in robotics"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
-    "matplotlib>=3.10.8",
-    "opencv-python>=4.12.0.88",
+    "matplotlib>=3.10.0",
+    "opencv-python>=4.12.0",
     "torch>=2.0.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "matplotlib>=3.7.0",
-    "opencv-python>=4.8.0",
+    "einops>=0.7.0",
     "pillow>=10.0.0",
 ]
+
+[tool.uv.workspace]
+members = ["1.video-tokenizer", "2.inverse-dynamics"]
+
