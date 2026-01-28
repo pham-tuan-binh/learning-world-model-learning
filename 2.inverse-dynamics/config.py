@@ -17,6 +17,7 @@ class ModelConfig:
     Key difference from video tokenizer:
     - n_actions: Size of discrete action vocabulary (power of 2)
     - action_dim: Computed as log2(n_actions)
+    - use_adaptive_conditioning: Enable adaptive layer norm with action conditioning
     """
 
     # Input dimensions
@@ -31,6 +32,9 @@ class ModelConfig:
 
     # Action space
     n_actions: int = 8            # Discrete action vocabulary (2^3 = 8)
+
+    # Conditioning
+    use_adaptive_conditioning: bool = True  # Enable adaptive layer norm conditioning
 
     # Regularization
     dropout: float = 0.0

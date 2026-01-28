@@ -23,6 +23,7 @@ from .st_transformer import (
     MultiHeadAttention,
     SwiGLU,
     RMSNorm,
+    AdaptiveRMSNorm,
 )
 from .positional_encoding import (
     SpatioTemporalPositionalEncoding,
@@ -45,6 +46,7 @@ __all__ = [
     "MultiHeadAttention",
     "SwiGLU",
     "RMSNorm",
+    "AdaptiveRMSNorm",
     # Positional encoding
     "SpatioTemporalPositionalEncoding",
     "SinusoidalPositionalEncoding",

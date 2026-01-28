@@ -1,8 +1,8 @@
 # 2. Inverse Dynamics
 
-The biggest problem with training a world model is the lack of action labels for videos. If we retrace the definition of world model from the first article, we need to train a model to predict the future based on current state and action. Getting the current state is easy - it's just the current video frame. But where do we get the actions from?
+The biggest problem with training a world model is the lack of action labels for videos. If we retrace the definition of world model from the first article, we need to train a model to predict the future based on current state and action. Getting the current state is easy, it's just the current video frame. But where do we get the actions from?
 
-The process of predicting the next frame is called **dynamics**. Much like dynamics in physics, where it's about how forces interact with each other in a scene. If we apply a force on an object, what would be its velocity? In world models, this question becomes: if we apply this action to the current state, what would be the next state?
+The process of predicting the next frame is called **dynamics**. Much like dynamics in physics, where it's about how forces interact with each other in a scene. If we apply a force on an object, what would be its velocity? In world models, this question becomes: **if we apply this action to the current state, what would be the next state?**
 
 In robotics, we have **inverse kinematics**, where we have the end pose of a robot's end effector and we need to calculate the joint positions to get there. **Inverse dynamics** concerns calculating the necessary torque and forces of each joint to get a desired motion.
 
@@ -13,7 +13,7 @@ In world models, **inverse dynamics means inferring the action from consecutive 
 Consider training a world model on YouTube videos. We have millions of hours of video showing people walking, cars driving, objects moving. But we don't have labels for what "actions" caused these movements. Without action labels, how can we train a model that takes (state, action) → next_state?
 
 The naive approaches don't work well:
-1. **Ignore actions entirely**: Just predict next frame from current frame. But then the model can't be controlled - it will hallucinate its own "actions."
+1. **Ignore actions entirely**: Just predict next frame from current frame. But then the model can't be controlled, it will hallucinate its own "actions."
 2. **Manual labeling**: Have humans label each frame transition with actions. Prohibitively expensive and doesn't scale.
 3. **Use controller inputs**: Only works for games/simulations where we can record inputs. Doesn't work for real-world video.
 
@@ -23,11 +23,41 @@ The key insight from [Genie](https://arxiv.org/abs/2402.15391) is elegant: **lea
 
 Out of first principles, to build an inverse dynamics model, we need to answer:
 
-1. **How do we infer actions from frame pairs?** What architecture looks at two frames and outputs an action?
-2. **How do we ensure actions are meaningful?** The model might learn to ignore actions entirely.
-3. **How do we train without ground truth?** We don't have action labels to supervise with.
+1. **How can we represent video frames?** We answered this question in the last article.
+2. **How can we represent actions?** For games, actions can be inputs from a controller. But in the real world, actions are normally more nuanced.
+3. **How do we infer actions from frame pairs?** What kind of architecture look at two frames and outputs an action?
+4. **How do we train without ground truth?** We don't have action labels to supervise with.
+
+And then we have to answer practical problems such as:
+
+5. **How do we ensure that actions are meaningful?** Models can easily collapse and ignore actions entirely for next frame prediction.
 
 ## The Solutions
+
+### 1. How can we represent video frames?
+
+This problem has been addressed in the last article. In short, we go from a traditional video frame `(H, W, 3)` to a discrete token representation `(P, 1)` where a frame is divided into patches and each patch is represented by a number token, from 0 to 1023.
+
+Practically, this token is represented with a vector of size `(5)` where the value in each dimension is put into 4 bins of values. The total number of tokens is therefore `4^5=1024`.
+
+In code, you'll find the input data of our model to be `(B, T, P, D)` where B is the batch size, T is the number of frames, P is the number of patches and D is the latent dim.
+
+### 2. How can we represent actions?
+
+In video games, actions can be recognized easily as games are played with controllers. For example, moving forward or moving joystick up can be represented as single number which tells the velocity of the player. This is continuous actions. Or we can represent discrete actions such as dpad buttons through quantization or one hot encoding.
+
+In the real world, actions are much more nuanced. As humans, our primary way of describing actions is either through words or demonstration. For example, walk forward 1 meter or jump. We don't have a way to accurately describe one's action. How do we expect computers to understand it?
+
+This is normally solved with [latent actions](https://arxiv.org/abs/2410.11758), which essentially captures the meaning of an action before relying on another model to output accurate actions based on embodiment such as position of a motor.
+
+In our case, we'll use discrete tokens for discrete actions for the sake of simplicity. The technique has already been discussed in the last article in the name of FSQ.
+
+For a code book size of 8 or 8 discrete actions, we should predict a vector of size (3) where each dimension is put into 2 bins. This gives us `2^3=8` codes.
+
+### 3. How can we infer actions from frame pairs?
+
+Let's re-frame our question: if we have 2 video frame, which is each represented as a vector of size `(P, D)`, how can we predict a vector of size `3`. In essence, we have  
+
 
 ### 1. How do we infer actions from frame pairs?
 

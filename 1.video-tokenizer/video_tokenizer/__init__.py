@@ -17,6 +17,7 @@ from .models import (
     PatchUnembedding,
     SpatioTemporalTransformer,
     SpatioTemporalPositionalEncoding,
+    AdaptiveRMSNorm,
 )
 
 from .data_utils import (
@@ -36,6 +37,7 @@ __all__ = [
     "PatchUnembedding",
     "SpatioTemporalTransformer",
     "SpatioTemporalPositionalEncoding",
+    "AdaptiveRMSNorm",
     "DummyVideoDataset",
     "VideoFolderDataset",
     "ImageFolderDataset",

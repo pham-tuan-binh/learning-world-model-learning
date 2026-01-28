@@ -73,6 +73,111 @@ class RMSNorm(nn.Module):
         return (x / rms) * self.scale
 
 
+class AdaptiveRMSNorm(nn.Module):
+    """
+    Adaptive RMS Normalization with optional FiLM conditioning.
+
+    FiLM (Feature-wise Linear Modulation) allows conditioning the normalization
+    on external information (e.g., actions, timesteps, class labels).
+
+    When conditioning is None: acts as standard RMSNorm
+    When conditioning is provided: applies FiLM modulation
+
+    Formula: normalized_x * (1 + scale) + shift
+    where scale and shift are generated from conditioning via MLP
+
+    This approach is used in:
+    - DiT (Diffusion Transformers) with AdaLN-Zero
+    - TinyWorlds for action conditioning
+    - Various conditional generation models
+
+    Args:
+        dim: Feature dimension to normalize over (E)
+        conditioning_dim: Dimension of conditioning vector (C), None to disable
+        eps: Small constant for numerical stability
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        conditioning_dim: Optional[int] = None,
+        eps: float = 1e-6,
+    ):
+        super().__init__()
+
+        self.eps = eps
+
+        # Learnable scale parameter for RMSNorm, initialized to 1
+        # scale: (dim,)
+        self.scale = nn.Parameter(torch.ones(dim))
+
+        if conditioning_dim is not None:
+            # MLP that generates shift and scale from conditioning
+            # Input: (B, C) conditioning vector
+            # Output: (B, 2*E) concatenated [shift, scale]
+            #
+            # SiLU activation (Swish) is used for smooth gradients
+            # Linear layer projects to 2*dim (for both shift and scale)
+            self.conditioning_mlp = nn.Sequential(
+                nn.SiLU(),
+                nn.Linear(conditioning_dim, dim * 2, bias=True),
+            )
+
+            # Zero initialization: critical for stable training
+            # At initialization, modulation is identity: shift=0, scale=0
+            # This means the network starts as if there's no conditioning
+            nn.init.constant_(self.conditioning_mlp[-1].weight, 0)
+            nn.init.constant_(self.conditioning_mlp[-1].bias, 0)
+        else:
+            self.conditioning_mlp = None
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        conditioning: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Apply adaptive RMS normalization with optional conditioning.
+
+        Args:
+            x: Input tensor, shape (B, S, E) or (B, E)
+               - B: batch size
+               - S: sequence length (optional)
+               - E: embed_dim
+            conditioning: Optional conditioning vector, shape (B, C)
+               - C: conditioning_dim
+
+        Returns:
+            Normalized and modulated tensor, same shape as input
+        """
+        # Standard RMSNorm
+        # rms: (*, 1) where * matches all dims except last
+        rms = torch.sqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps)
+        x_norm = (x / rms) * self.scale
+
+        # Apply FiLM conditioning if provided
+        if conditioning is not None and self.conditioning_mlp is not None:
+            # Generate modulation parameters
+            # modulation: (B, 2*E)
+            modulation = self.conditioning_mlp(conditioning)
+
+            # Split into shift and scale
+            # shift, scale: (B, E)
+            shift, scale = modulation.chunk(2, dim=-1)
+
+            # Broadcast for different input shapes
+            # If x is (B, S, E), expand shift/scale to (B, 1, E)
+            if len(x_norm.shape) == 3:  # (B, S, E)
+                shift = shift.unsqueeze(1)  # (B, 1, E)
+                scale = scale.unsqueeze(1)  # (B, 1, E)
+
+            # Apply FiLM modulation: x * (1 + scale) + shift
+            # The (1 + scale) formulation means scale=0 is identity
+            x_norm = x_norm * (1 + scale) + shift
+
+        return x_norm
+
+
 class MultiHeadAttention(nn.Module):
     """
     Multi-Head Self-Attention from first principles.
@@ -87,6 +192,7 @@ class MultiHeadAttention(nn.Module):
         num_heads: Number of attention heads (H)
                    E must be divisible by H
         dropout: Dropout probability for attention weights (default: 0.0)
+        conditioning_dim: Optional dimension for adaptive normalization (C)
     """
 
     def __init__(
@@ -94,6 +200,7 @@ class MultiHeadAttention(nn.Module):
         embed_dim: int,
         num_heads: int,
         dropout: float = 0.0,
+        conditioning_dim: Optional[int] = None,
     ):
         super().__init__()
 
@@ -116,12 +223,17 @@ class MultiHeadAttention(nn.Module):
         # Output projection after concatenating heads
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=False)
 
+        # Adaptive output normalization (post-norm)
+        # When conditioning_dim is None, behaves as standard RMSNorm
+        self.out_norm = AdaptiveRMSNorm(embed_dim, conditioning_dim)
+
         self.dropout = nn.Dropout(dropout)
 
     def forward(
         self,
         x: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
+        conditioning: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Apply multi-head self-attention.
@@ -134,6 +246,8 @@ class MultiHeadAttention(nn.Module):
             mask: Optional attention mask, shape (S, S) or (B, S, S)
                   True/1 values are MASKED (not attended to)
                   Used for causal attention
+            conditioning: Optional conditioning vector, shape (B, C)
+                         For adaptive normalization
 
         Returns:
             Output tensor, shape (B, S, E)
@@ -183,6 +297,9 @@ class MultiHeadAttention(nn.Module):
         # Final output projection
         output = self.out_proj(attn_output)
 
+        # Apply adaptive normalization with conditioning
+        output = self.out_norm(output, conditioning)
+
         return output
 
 
@@ -201,6 +318,7 @@ class SwiGLU(nn.Module):
         embed_dim: Input/output dimension (E)
         hidden_dim: Hidden dimension (typically 4 * E or computed as 2/3 * 4 * E)
         dropout: Dropout probability (default: 0.0)
+        conditioning_dim: Optional dimension for adaptive normalization (C)
     """
 
     def __init__(
@@ -208,6 +326,7 @@ class SwiGLU(nn.Module):
         embed_dim: int,
         hidden_dim: Optional[int] = None,
         dropout: float = 0.0,
+        conditioning_dim: Optional[int] = None,
     ):
         super().__init__()
 
@@ -228,14 +347,23 @@ class SwiGLU(nn.Module):
         # W3: output projection
         self.w3 = nn.Linear(hidden_dim, embed_dim, bias=False)
 
+        # Adaptive output normalization (post-norm)
+        self.out_norm = AdaptiveRMSNorm(embed_dim, conditioning_dim)
+
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        conditioning: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         """
         Apply SwiGLU feed-forward transformation.
 
         Args:
             x: Input tensor, shape (*, E)
+            conditioning: Optional conditioning vector, shape (B, C)
+                         For adaptive normalization
 
         Returns:
             Output tensor, shape (*, E)
@@ -245,6 +373,7 @@ class SwiGLU(nn.Module):
             2. value = W2 @ x
             3. hidden = gate * value (element-wise)
             4. output = W3 @ hidden
+            5. output = AdaptiveNorm(output, conditioning)
         """
         # Gate: SiLU activation (Swish)
         # SiLU(x) = x * sigmoid(x)
@@ -260,6 +389,9 @@ class SwiGLU(nn.Module):
         # Output projection
         output = self.w3(hidden)
 
+        # Apply adaptive normalization with conditioning
+        output = self.out_norm(output, conditioning)
+
         return output
 
 
@@ -274,11 +406,16 @@ class SpatioTemporalBlock(nn.Module):
 
     All with residual connections and RMSNorm.
 
+    When conditioning is enabled, uses:
+    - Adaptive layer norm (FiLM modulation) in attention and FFN outputs
+    - Gated residuals to control skip connection strength
+
     Args:
         embed_dim: Embedding dimension (E)
         num_heads: Number of attention heads (H)
         hidden_dim: FFN hidden dimension (optional, defaults to ~8/3 * E)
         dropout: Dropout probability
+        conditioning_dim: Optional dimension for adaptive conditioning (C)
     """
 
     def __init__(
@@ -287,6 +424,7 @@ class SpatioTemporalBlock(nn.Module):
         num_heads: int,
         hidden_dim: Optional[int] = None,
         dropout: float = 0.0,
+        conditioning_dim: Optional[int] = None,
     ):
         super().__init__()
 
@@ -294,23 +432,43 @@ class SpatioTemporalBlock(nn.Module):
         self.num_heads = num_heads
 
         # Normalization layers (pre-norm architecture)
+        # These are standard RMSNorm, not adaptive
         self.norm_spatial = RMSNorm(embed_dim)
         self.norm_temporal = RMSNorm(embed_dim)
         self.norm_ffn = RMSNorm(embed_dim)
 
-        # Attention layers
-        self.spatial_attn = MultiHeadAttention(embed_dim, num_heads, dropout)
-        self.temporal_attn = MultiHeadAttention(embed_dim, num_heads, dropout)
+        # Attention layers with adaptive post-norm
+        # The conditioning_dim enables adaptive normalization in the output
+        self.spatial_attn = MultiHeadAttention(embed_dim, num_heads, dropout, conditioning_dim)
+        self.temporal_attn = MultiHeadAttention(embed_dim, num_heads, dropout, conditioning_dim)
 
-        # Feed-forward network
-        self.ffn = SwiGLU(embed_dim, hidden_dim, dropout)
+        # Feed-forward network with adaptive post-norm
+        self.ffn = SwiGLU(embed_dim, hidden_dim, dropout, conditioning_dim)
 
         self.dropout = nn.Dropout(dropout)
+
+        # Gate parameters for residual scaling (AdaLN-Zero approach)
+        # These gates control the strength of each residual connection
+        # Zero initialization means residuals start with minimal effect
+        if conditioning_dim is not None:
+            # MLP generates 3 gate values (spatial, temporal, ffn)
+            # Input: (B, C) conditioning
+            # Output: (B, 3*E) concatenated gates
+            self.gate_mlp = nn.Sequential(
+                nn.SiLU(),
+                nn.Linear(conditioning_dim, 3 * embed_dim, bias=True),
+            )
+            # Zero initialization for stable training
+            nn.init.constant_(self.gate_mlp[-1].weight, 0)
+            nn.init.constant_(self.gate_mlp[-1].bias, 0)
+        else:
+            self.gate_mlp = None
 
     def forward(
         self,
         x: torch.Tensor,
         causal_mask: Optional[torch.Tensor] = None,
+        conditioning: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Apply one spatio-temporal transformer block.
@@ -323,21 +481,45 @@ class SpatioTemporalBlock(nn.Module):
                - E: embed_dim
             causal_mask: Optional causal mask for temporal attention
                          Shape: (T, T), True values are masked
+            conditioning: Optional conditioning vector, shape (B, C)
+                         For adaptive normalization and gated residuals
 
         Returns:
             Output tensor, shape (B, T, N, E)
         """
         B, T, N, E = x.shape
 
+        # Compute gate parameters if using conditioning
+        # gates: (B, 3*E) -> split into 3 gates of (B, E)
+        gate_spatial, gate_temporal, gate_ffn = None, None, None
+        if conditioning is not None and self.gate_mlp is not None:
+            gates = self.gate_mlp(conditioning)  # (B, 3*E)
+            gate_spatial, gate_temporal, gate_ffn = gates.chunk(3, dim=-1)  # Each: (B, E)
+
         # === Spatial Attention ===
         # Attend within each frame: each patch attends to all patches in same frame
         # Reshape: (B, T, N, E) -> (B*T, N, E)
-        # Use contiguous() to ensure tensor is contiguous after any prior operations
         x_spatial = x.contiguous().view(B * T, N, E)
 
-        # Apply attention (no mask - all patches can attend to each other)
-        x_spatial = self.norm_spatial(x_spatial)
-        attn_out = self.spatial_attn(x_spatial)
+        # Pre-norm
+        x_spatial_norm = self.norm_spatial(x_spatial)
+
+        # Expand conditioning for spatial attention
+        # conditioning: (B, C) -> (B*T, C) by expanding over T
+        cond_spatial = None
+        if conditioning is not None:
+            # (B, C) -> (B, T, C) -> (B*T, C)
+            cond_spatial = conditioning.unsqueeze(1).expand(B, T, -1).contiguous().view(B * T, -1)
+
+        # Attention with adaptive norm
+        attn_out = self.spatial_attn(x_spatial_norm, conditioning=cond_spatial)
+
+        # Apply gate to modulate residual strength
+        if gate_spatial is not None:
+            # gate_spatial: (B, E) -> (B*T, E) -> (B*T, 1, E) for broadcasting
+            gate_expanded = gate_spatial.unsqueeze(1).expand(B, T, -1).contiguous().view(B * T, E)
+            attn_out = gate_expanded.unsqueeze(1) * attn_out  # (B*T, 1, E) * (B*T, N, E)
+
         x_spatial = x_spatial + self.dropout(attn_out)  # Residual
 
         # Reshape back: (B*T, N, E) -> (B, T, N, E)
@@ -346,12 +528,27 @@ class SpatioTemporalBlock(nn.Module):
         # === Temporal Attention ===
         # Attend across frames: each patch attends to same patch position in other frames
         # Reshape: (B, T, N, E) -> (B*N, T, E)
-        # Use contiguous() after permute to enable view
         x_temporal = x.permute(0, 2, 1, 3).contiguous().view(B * N, T, E)
 
-        # Apply attention with causal mask
-        x_temporal = self.norm_temporal(x_temporal)
-        attn_out = self.temporal_attn(x_temporal, mask=causal_mask)
+        # Pre-norm
+        x_temporal_norm = self.norm_temporal(x_temporal)
+
+        # Expand conditioning for temporal attention
+        # conditioning: (B, C) -> (B*N, C) by expanding over N
+        cond_temporal = None
+        if conditioning is not None:
+            # (B, C) -> (B, N, C) -> (B*N, C)
+            cond_temporal = conditioning.unsqueeze(1).expand(B, N, -1).contiguous().view(B * N, -1)
+
+        # Attention with causal mask and adaptive norm
+        attn_out = self.temporal_attn(x_temporal_norm, mask=causal_mask, conditioning=cond_temporal)
+
+        # Apply gate to modulate residual strength
+        if gate_temporal is not None:
+            # gate_temporal: (B, E) -> (B*N, E) -> (B*N, 1, E) for broadcasting
+            gate_expanded = gate_temporal.unsqueeze(1).expand(B, N, -1).contiguous().view(B * N, E)
+            attn_out = gate_expanded.unsqueeze(1) * attn_out  # (B*N, 1, E) * (B*N, T, E)
+
         x_temporal = x_temporal + self.dropout(attn_out)  # Residual
 
         # Reshape back: (B*N, T, E) -> (B, N, T, E) -> (B, T, N, E)
@@ -360,7 +557,28 @@ class SpatioTemporalBlock(nn.Module):
         # === Feed-Forward Network ===
         # Apply to each token independently
         x_ffn = self.norm_ffn(x)
-        ffn_out = self.ffn(x_ffn)
+
+        # Expand conditioning for FFN
+        # Need to apply per-token, so expand to (B*T*N, C)
+        cond_ffn = None
+        if conditioning is not None:
+            # (B, C) -> (B, T, N, C) -> (B*T*N, C)
+            cond_ffn = conditioning.unsqueeze(1).unsqueeze(2).expand(B, T, N, -1)
+            cond_ffn = cond_ffn.contiguous().view(B * T * N, -1)
+
+            # Flatten x_ffn for FFN processing
+            x_ffn_flat = x_ffn.view(B * T * N, E)
+            ffn_out = self.ffn(x_ffn_flat, conditioning=cond_ffn)
+            ffn_out = ffn_out.view(B, T, N, E)
+        else:
+            ffn_out = self.ffn(x_ffn)
+
+        # Apply gate to modulate residual strength
+        if gate_ffn is not None:
+            # gate_ffn: (B, E) -> (B, 1, 1, E) for broadcasting
+            gate_expanded = gate_ffn.unsqueeze(1).unsqueeze(2)
+            ffn_out = gate_expanded * ffn_out  # (B, 1, 1, E) * (B, T, N, E)
+
         x = x + self.dropout(ffn_out)  # Residual
 
         return x
@@ -380,6 +598,8 @@ class SpatioTemporalTransformer(nn.Module):
         dropout: Dropout probability
         causal_temporal: Whether to use causal masking in temporal attention
                          (True = can't look at future frames)
+        conditioning_dim: Optional dimension for adaptive conditioning (C)
+                         If None, behaves as standard transformer
     """
 
     def __init__(
@@ -390,6 +610,7 @@ class SpatioTemporalTransformer(nn.Module):
         hidden_dim: Optional[int] = None,
         dropout: float = 0.0,
         causal_temporal: bool = True,
+        conditioning_dim: Optional[int] = None,
     ):
         super().__init__()
 
@@ -398,9 +619,9 @@ class SpatioTemporalTransformer(nn.Module):
         self.num_blocks = num_blocks
         self.causal_temporal = causal_temporal
 
-        # Stack of transformer blocks
+        # Stack of transformer blocks with optional conditioning
         self.blocks = nn.ModuleList([
-            SpatioTemporalBlock(embed_dim, num_heads, hidden_dim, dropout)
+            SpatioTemporalBlock(embed_dim, num_heads, hidden_dim, dropout, conditioning_dim)
             for _ in range(num_blocks)
         ])
 
@@ -430,7 +651,11 @@ class SpatioTemporalTransformer(nn.Module):
         mask = torch.triu(torch.ones(seq_len, seq_len, device=device), diagonal=1)
         return mask.bool()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        conditioning: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         """
         Apply spatio-temporal transformer.
 
@@ -440,6 +665,8 @@ class SpatioTemporalTransformer(nn.Module):
                - T: number of frames
                - N: number of patches per frame
                - E: embed_dim
+            conditioning: Optional conditioning vector, shape (B, C)
+                         For adaptive normalization
 
         Returns:
             Output tensor, shape (B, T, N, E)
@@ -451,9 +678,9 @@ class SpatioTemporalTransformer(nn.Module):
         if self.causal_temporal:
             causal_mask = self._create_causal_mask(T, x.device)
 
-        # Apply transformer blocks
+        # Apply transformer blocks with conditioning
         for block in self.blocks:
-            x = block(x, causal_mask)
+            x = block(x, causal_mask, conditioning=conditioning)
 
         # Final normalization
         x = self.final_norm(x)

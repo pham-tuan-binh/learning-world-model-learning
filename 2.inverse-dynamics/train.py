@@ -179,6 +179,8 @@ def main():
     parser.add_argument("--num-heads", type=int, default=8)
     parser.add_argument("--num-blocks", type=int, default=4)
     parser.add_argument("--n-actions", type=int, default=8)
+    parser.add_argument("--no-adaptive-conditioning", action="store_true",
+                       help="Disable adaptive layer norm conditioning")
 
     # Training arguments
     parser.add_argument("--batch-size", type=int, default=8)
@@ -254,6 +256,7 @@ def main():
         embed_dim=config.model.embed_dim,
         num_heads=config.model.num_heads,
         num_blocks=config.model.num_blocks,
+        use_adaptive_conditioning=not args.no_adaptive_conditioning,
     )
     model = model.to(config.device)
 
@@ -261,6 +264,7 @@ def main():
     print(f"Parameters: {num_params:,}")
     print(f"Action vocabulary: {config.model.n_actions}")
     print(f"Action dimension: {config.model.action_dim}")
+    print(f"Adaptive conditioning: {not args.no_adaptive_conditioning}")
     print(f"Device: {config.device}")
 
     # Optimizer
