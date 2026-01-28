@@ -150,10 +150,14 @@ class LatentActionsDecoder(nn.Module):
 
     Architecture:
     1. Patch embedding: Convert current frame to patches
-    2. Action conditioning: Project action and add to embeddings
+    2. Action conditioning: Project action and add to embeddings (additive conditioning)
     3. Token masking: Mask tokens to force reliance on actions
-    4. ST-Transformer: Process conditioned embeddings
+    4. ST-Transformer: Process conditioned embeddings (with optional adaptive conditioning)
     5. Frame head: Convert back to pixels
+
+    Conditioning approach:
+    - Additive conditioning: Actions projected and added to patch embeddings (coarse-grained)
+    - Adaptive conditioning: FiLM modulation in transformer layers (fine-grained, optional)
 
     Args:
         frame_size: Height/width of frames
@@ -162,6 +166,7 @@ class LatentActionsDecoder(nn.Module):
         num_heads: Number of attention heads
         num_blocks: Number of transformer blocks
         action_dim: Dimension of action conditioning (A)
+        use_adaptive_conditioning: Whether to use adaptive layer norm conditioning
     """
 
     def __init__(
@@ -172,6 +177,7 @@ class LatentActionsDecoder(nn.Module):
         num_heads: int = 8,
         num_blocks: int = 4,
         action_dim: int = 3,
+        use_adaptive_conditioning: bool = True,
     ):
         super().__init__()
 
@@ -180,6 +186,7 @@ class LatentActionsDecoder(nn.Module):
         self.embed_dim = embed_dim
         self.grid_size = frame_size // patch_size
         self.num_patches = self.grid_size ** 2
+        self.use_adaptive_conditioning = use_adaptive_conditioning
 
         # Patch embedding
         self.patch_embed = PatchEmbedding(
@@ -196,20 +203,24 @@ class LatentActionsDecoder(nn.Module):
             max_frames=32,
         )
 
-        # Action conditioning projection
+        # Action conditioning projection (additive conditioning)
         # Projects action from A -> E dimensions
+        # This provides coarse-grained global action context
         self.action_proj = nn.Sequential(
             nn.Linear(action_dim, embed_dim),
             nn.GELU(),
             nn.Linear(embed_dim, embed_dim),
         )
 
-        # Transformer (non-causal since we're reconstructing)
+        # Transformer with optional adaptive conditioning
+        # When use_adaptive_conditioning=True, passes action_dim as conditioning_dim
+        # This enables FiLM-style modulation in each transformer layer
         self.transformer = SpatioTemporalTransformer(
             embed_dim=embed_dim,
             num_heads=num_heads,
             num_blocks=num_blocks,
             causal_temporal=False,  # Can see all frames during decoding
+            conditioning_dim=action_dim if use_adaptive_conditioning else None,
         )
 
         # Frame reconstruction head
@@ -251,7 +262,7 @@ class LatentActionsDecoder(nn.Module):
         # Add positional encoding
         video_embeddings = self.pos_encoding(video_embeddings)
 
-        # Project and add action conditioning
+        # Additive action conditioning (coarse-grained global context)
         # actions: (B, T-1, A) -> (B, T-1, E)
         action_embed = self.action_proj(actions)
         # Expand to patches: (B, T-1, E) -> (B, T-1, 1, E) -> (B, T-1, N, E)
@@ -269,8 +280,16 @@ class LatentActionsDecoder(nn.Module):
                 self.mask_token.expand_as(video_embeddings),
             )
 
-        # Apply transformer
-        transformed = self.transformer(video_embeddings)  # (B, T-1, N, E)
+        # Adaptive conditioning: mean pool actions over temporal dimension
+        # This provides a single conditioning vector per batch sample
+        # All transformer layers receive the same conditioning
+        # actions: (B, T-1, A) -> mean over T-1 -> (B, A)
+        action_conditioning = None
+        if self.use_adaptive_conditioning:
+            action_conditioning = actions.mean(dim=1)  # (B, A)
+
+        # Apply transformer with adaptive conditioning (fine-grained per-layer modulation)
+        transformed = self.transformer(video_embeddings, conditioning=action_conditioning)  # (B, T-1, N, E)
 
         # Reconstruct frames
         patches = self.frame_head(transformed)  # (B, T-1, N, 3*P*P)
@@ -303,6 +322,7 @@ class LatentActionModel(nn.Module):
         embed_dim: Embedding dimension
         num_heads: Number of attention heads
         num_blocks: Number of transformer blocks
+        use_adaptive_conditioning: Whether to use adaptive layer norm conditioning in decoder
     """
 
     NUM_LATENT_ACTIONS_BINS = 2  # Binary quantization
@@ -315,6 +335,7 @@ class LatentActionModel(nn.Module):
         embed_dim: int = 128,
         num_heads: int = 8,
         num_blocks: int = 4,
+        use_adaptive_conditioning: bool = True,
     ):
         super().__init__()
 
@@ -342,6 +363,7 @@ class LatentActionModel(nn.Module):
         )
 
         # Decoder: frame + action -> next frame
+        # With optional adaptive layer norm conditioning
         self.decoder = LatentActionsDecoder(
             frame_size=frame_size,
             patch_size=patch_size,
@@ -349,6 +371,7 @@ class LatentActionModel(nn.Module):
             num_heads=num_heads,
             num_blocks=num_blocks,
             action_dim=self.action_dim,
+            use_adaptive_conditioning=use_adaptive_conditioning,
         )
 
         # Variance regularization (prevents action collapse)
