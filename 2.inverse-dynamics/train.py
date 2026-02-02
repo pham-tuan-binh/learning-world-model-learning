@@ -207,6 +207,7 @@ def main():
         model_num_heads=args.num_heads,
         model_num_blocks=args.num_blocks,
         model_n_actions=args.n_actions,
+        model_use_adaptive_conditioning=not args.no_adaptive_conditioning,
         training_batch_size=args.batch_size,
         training_learning_rate=args.learning_rate,
         training_num_epochs=args.num_epochs,
@@ -256,7 +257,7 @@ def main():
         embed_dim=config.model.embed_dim,
         num_heads=config.model.num_heads,
         num_blocks=config.model.num_blocks,
-        use_adaptive_conditioning=not args.no_adaptive_conditioning,
+        use_adaptive_conditioning=config.model.use_adaptive_conditioning,
     )
     model = model.to(config.device)
 
@@ -264,7 +265,7 @@ def main():
     print(f"Parameters: {num_params:,}")
     print(f"Action vocabulary: {config.model.n_actions}")
     print(f"Action dimension: {config.model.action_dim}")
-    print(f"Adaptive conditioning: {not args.no_adaptive_conditioning}")
+    print(f"Adaptive conditioning: {config.model.use_adaptive_conditioning}")
     print(f"Device: {config.device}")
 
     # Optimizer
