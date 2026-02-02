@@ -154,6 +154,7 @@ def main():
         embed_dim=config.model.embed_dim,
         num_heads=config.model.num_heads,
         num_blocks=config.model.num_blocks,
+        use_adaptive_conditioning=config.model.use_adaptive_conditioning,
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(config.device)
