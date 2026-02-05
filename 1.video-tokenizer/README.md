@@ -1,6 +1,8 @@
+![thumbnail](../assets/1.video-tokenizer/thumbnail.png)
+
 # 1. Video Tokenizer
 
-The first question we are going to answer in this repository is **how to represent a video frame inside a world model**. 
+The first question we are going to answer in this repository is **how to represent a video frame inside a world model**.
 
 In language models, we convert text into tokens i.e. discrete integers that the model can process. A sentence like "Hello world" becomes something like `[15496, 995]`. This works because language is inherently discrete and can be separated into [multiple chunks or components](https://tiktokenizer.vercel.app/).
 
@@ -17,7 +19,7 @@ To briefly recap, we want to build a world model that predicts future video fram
 1. **Too high dimensional**: A `128×128×3` frame = 49,152 values. Processing 4 frames means 196,608 values per sample.
 2. **No semantic structure**: Pixels don't capture meaning nor timing, i.e., a slight shift in lighting changes all pixel values but the scene is the same, the scene is the same but the time is different.
 
-Assuming you have already worked with [transformers](https://jalammar.github.io/illustrated-transformer/), take 5 minutes before continuing to form research questions: how would you tackle these problems yourself, what kind of questions do you need to answer to solve these problems. 
+Assuming you have already worked with [transformers](https://jalammar.github.io/illustrated-transformer/), take 5 minutes before continuing to form research questions: how would you tackle these problems yourself, what kind of questions do you need to answer to solve these problems.
 
 Out of first principles, to encode and decode a video frame through tokens, several questions come to mind:
 
@@ -28,7 +30,7 @@ Out of first principles, to encode and decode a video frame through tokens, seve
 5. **How do we discretize?** Continuous values need to become discrete tokens.
 6. **How do we reconstruct pixels from tokens?** We need to decode back to frames for training.
 
-## The Solution 
+## The Solution
 
 ### 1. How do we reduce the dimensionality?
 
@@ -129,7 +131,7 @@ Now we have 256 patch embeddings per frame. Even though each patch knows where i
 
 This is what **self-attention** does. Each patch looks at all other patches and computes a weighted sum based on relevance. "How much should I pay attention to each other patch?"
 
-Since the amount of material on attention is [abundant](https://jalammar.github.io/illustrated-transformer/), I'm not going to write about it anymore. However, it's important to note that unlike attention in LLMs, our spatial attention has no causal mask. 
+Since the amount of material on attention is [abundant](https://jalammar.github.io/illustrated-transformer/), I'm not going to write about it anymore. However, it's important to note that unlike attention in LLMs, our spatial attention has no causal mask.
 
 The intuition behind this is simple. In a sentence, the next word is dependent on the previous word. For the prefill and training stage to work in an LLM, we need to introduce a causal mask so that future tokens won't affect past tokens. However, such a relation doesn't really exist in a single image. One part of the image attends to all other parts of the image. After all, they are captured at the same time.
 
@@ -370,25 +372,25 @@ Autoencoder (what we're doing):
 
 There's no cross-attention. The encoder and decoder only communicate through the **bottleneck** (the discrete tokens). Both use the same `SpatioTemporalTransformer` class but with:
 
-| | Encoder's Transformer | Decoder's Transformer |
-|---|---|---|
+|                    | Encoder's Transformer     | Decoder's Transformer |
+| ------------------ | ------------------------- | --------------------- |
 | Temporal attention | Causal (can't see future) | Non-causal (sees all) |
-| Weights | Learned independently | Learned independently |
-| Cross-attention | None | None |
+| Weights            | Learned independently     | Learned independently |
+| Cross-attention    | None                      | None                  |
 
 ## Dimensions Reference
 
-| Symbol | Meaning | Default |
-|--------|---------|---------|
-| B | Batch size | 8 |
-| T | Number of frames | 4 |
-| C | Channels (RGB) | 3 |
-| H, W | Frame height/width | 128 |
-| P | Patch size | 8 |
-| N | Patches per frame = (H/P)² | 256 |
-| E | Embedding dimension | 128 |
-| D | Latent dimensions (FSQ) | 5 |
-| L | Bins per dimension (FSQ) | 4 |
+| Symbol | Meaning                    | Default |
+| ------ | -------------------------- | ------- |
+| B      | Batch size                 | 8       |
+| T      | Number of frames           | 4       |
+| C      | Channels (RGB)             | 3       |
+| H, W   | Frame height/width         | 128     |
+| P      | Patch size                 | 8       |
+| N      | Patches per frame = (H/P)² | 256     |
+| E      | Embedding dimension        | 128     |
+| D      | Latent dimensions (FSQ)    | 5       |
+| L      | Bins per dimension (FSQ)   | 4       |
 
 ## Usage
 
@@ -407,11 +409,13 @@ uv run python validate.py --checkpoint checkpoints/best_model.pt --save-images
 ## What to look for
 
 During training:
+
 - **Loss should decrease** - if it doesn't, learning rate might be wrong
 - **Codebook usage should be high** - all 1024 tokens should eventually be used
 - **Validation should track training** - if val loss diverges, you're overfitting
 
 During validation:
+
 - **PSNR > 25 dB** - reasonable quality
 - **PSNR > 30 dB** - good quality
 - **Codebook usage > 90%** - efficient use of vocabulary
@@ -483,14 +487,14 @@ uv run python validate.py --checkpoint checkpoints/best_model.pt --data-path ./d
 
 Reconstruction quality on real video frames from the validation set (PSNR ~22 dB):
 
-| | | | | |
-|---|---|---|---|---|
+|                                                                   |                                                                   |                                                                   |                                                                   |                                                                   |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------- |
 | ![Sample 1](../assets/1.video-tokenizer/real-decode/sample_1.png) | ![Sample 2](../assets/1.video-tokenizer/real-decode/sample_2.png) | ![Sample 3](../assets/1.video-tokenizer/real-decode/sample_3.png) | ![Sample 4](../assets/1.video-tokenizer/real-decode/sample_4.png) | ![Sample 5](../assets/1.video-tokenizer/real-decode/sample_5.png) |
 
 What happens when we feed random noise through the tokenizer? The decoder produces blurry, averaged outputs since noise doesn't map to meaningful tokens:
 
-| | | | | |
-|---|---|---|---|---|
+|                                                                    |                                                                    |                                                                    |                                                                    |                                                                    |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
 | ![Sample 1](../assets/1.video-tokenizer/noise-decode/sample_1.png) | ![Sample 2](../assets/1.video-tokenizer/noise-decode/sample_2.png) | ![Sample 3](../assets/1.video-tokenizer/noise-decode/sample_3.png) | ![Sample 4](../assets/1.video-tokenizer/noise-decode/sample_4.png) | ![Sample 5](../assets/1.video-tokenizer/noise-decode/sample_5.png) |
 
 ### Using the Checkpoints
