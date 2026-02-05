@@ -59,6 +59,7 @@ In video games, actions are controller inputs: move left, jump, shoot. These can
 The insight is to use **latent actions**. We don't define what actions mean; we let the model learn them. The model outputs a vector, and we discretize it into a finite vocabulary of actions using FSQ (Finite Scalar Quantization) from folder 1.
 
 For example, with `action_dim=3` dimensions and binary quantization (2 bins per dimension):
+
 - `2³ = 8` possible discrete actions
 - Action `[0, 0, 0]` maps to action 0 (the model learns this might mean "stay still")
 - Action `[1, 0, 1]` maps to action 5 (the model learns this might mean "move forward")
@@ -87,6 +88,8 @@ class LatentActionModel(nn.Module):
 ```
 
 Why binary quantization? It's the simplest form: each dimension is either 0 or 1. With 3 dimensions, we get 8 actions. Want more actions? Increase `action_dim`: with 4 dimensions, `2⁴ = 16` actions.
+
+![Action Quantization](../assets/2.inverse-dynamics/action_quantization.png)
 
 ### 3. How do we infer actions from frame pairs?
 
@@ -152,11 +155,14 @@ self.action_head = nn.Sequential(
 )
 ```
 
+![Frame Pair to Action](../assets/2.inverse-dynamics/frame_pair_to_action.png)
+
 ### 4. How do we train without ground truth actions?
 
 Here's the elegant part: we use **reconstruction** as the training signal. If our inferred actions are correct, we should be able to use them to predict the next frame.
 
 The training loop:
+
 1. Encoder sees frames `[f1, f2, f3, f4]`
 2. Encoder outputs actions `[a1, a2, a3]` (one per transition)
 3. Quantizer discretizes actions to finite vocabulary
@@ -192,6 +198,7 @@ We never need ground truth actions. The model learns to infer actions that are *
 ### 5. How do we ensure actions are meaningful?
 
 This is the key challenge. Without any constraint, the decoder might:
+
 - Ignore the action entirely and just copy the input frame
 - Predict the "average" next frame regardless of action
 - Collapse all actions to the same value
@@ -201,6 +208,7 @@ Two techniques prevent this:
 **Technique 1: Aggressive token masking**
 
 During training, we mask almost all input tokens in the decoder. The decoder only sees:
+
 - The first frame (as an anchor)
 - The action conditioning
 
@@ -227,6 +235,8 @@ class LatentActionsDecoder(nn.Module):
 
 Why keep the first frame? The decoder needs some reference point. The first frame provides context (what scene are we in?), and the action tells us how that scene changes.
 
+![Token Masking](../assets/2.inverse-dynamics/token_masking.png)
+
 **Technique 2: Variance penalty**
 
 To prevent action collapse (where the encoder predicts the same action for everything), we add a variance penalty:
@@ -241,6 +251,8 @@ total_loss = recon_loss + self.var_lambda * var_penalty
 ```
 
 If the variance of actions drops below a target threshold, the penalty kicks in, pushing the model to produce diverse actions.
+
+![Variance Penalty](../assets/2.inverse-dynamics/variance_penalty.png)
 
 ### 6. How does the decoder condition on actions?
 
@@ -325,6 +337,8 @@ class LatentActionsDecoder(nn.Module):
         transformed = self.transformer(video_embeddings, conditioning=action_conditioning)
 ```
 
+![Adaptive Conditioning](../assets/2.inverse-dynamics/adaptive_conditioning.png)
+
 ## The Architecture
 
 ```
@@ -372,45 +386,47 @@ Training: minimize reconstruction loss + variance penalty
 
 ## Dimensions Reference
 
-| Symbol | Meaning | Default |
-|--------|---------|---------|
-| B | Batch size | 8 |
-| T | Number of frames | 4 |
-| C | Channels (RGB) | 3 |
-| H, W | Frame height/width | 128 |
-| P | Patch size | 8 |
-| N | Patches per frame = (H/P)² | 256 |
-| E | Embedding dimension | 128 |
-| A | Action dimension | 3 |
-| n_actions | Discrete vocabulary = 2^A | 8 |
+| Symbol    | Meaning                    | Default |
+| --------- | -------------------------- | ------- |
+| B         | Batch size                 | 8       |
+| T         | Number of frames           | 4       |
+| C         | Channels (RGB)             | 3       |
+| H, W      | Frame height/width         | 128     |
+| P         | Patch size                 | 8       |
+| N         | Patches per frame = (H/P)² | 256     |
+| E         | Embedding dimension        | 128     |
+| A         | Action dimension           | 3       |
+| n_actions | Discrete vocabulary = 2^A  | 8       |
 
 ## Usage
 
 ```bash
 # Train with dummy data (sanity check)
-uv run python train.py --use-dummy-data --num-epochs 10
+uv run train.py --use-dummy-data --num-epochs 10
 
 # Train with video folder
-uv run python train.py --data-path /path/to/videos --data-type folder
+uv run train.py --data-path /path/to/videos --data-type folder
 
 # Train with more actions (16 = 2^4)
-uv run python train.py --data-path /path/to/videos --n-actions 16
+uv run train.py --data-path /path/to/videos --n-actions 16
 
 # Disable adaptive conditioning (uses only additive conditioning)
-uv run python train.py --data-path /path/to/videos --no-adaptive-conditioning
+uv run train.py --data-path /path/to/videos --no-adaptive-conditioning
 
 # Validate and analyze
-uv run python validate.py --checkpoint checkpoints/best_model.pt --save-images
+uv run validate.py --checkpoint checkpoints/best_model.pt --save-images
 ```
 
 ## What to Look For
 
 During training:
+
 - **Loss should decrease**: if not, learning rate might be wrong
 - **Action variance should stay above target**: if it collapses to 0, increase `var_lambda`
 - **Unique actions used**: ideally all `n_actions` get used over time
 
 During validation:
+
 - **Reconstruction quality**: predicted frames should resemble targets
 - **Action diversity**: different transitions should produce different actions
 - **Action consistency**: similar transitions should produce similar actions
@@ -433,14 +449,45 @@ During validation:
 ## Reused Components
 
 This folder imports components from `1.video-tokenizer/`:
+
 - `PatchEmbedding`: Convert frames to patch tokens
 - `SpatioTemporalTransformer`: Attention over space and time (with optional action conditioning)
 - `SpatioTemporalPositionalEncoding`: Position information
 - `FiniteScalarQuantizer`: Discretize continuous latents
 
+## Run Log
+
+To validate the model, I used gameplay footage from [Doom Gameplay Dataset](https://github.com/thavlik/doom-gameplay-dataset/tree/master?tab=readme-ov-file). The dataset has roughly 170 hours of Doom 1 and 2 gameplay at 320x240 resolution.
+
+For compute, I used a spot L4 GPU (24GB VRAM) instance on GCP with 16 CPU cores. The following parameters were used:
+
+```
+uv run ./2.inverse-dynamics/train.py \
+  --data-path ./2.inverse-dynamics/data/ \
+  --data-type folder \
+  --batch-size 48 \
+  --embed-dim 256 \
+  --num-blocks 6 \
+  --num-epochs 3 \
+  --num-workers 16
+```
+
+The output of such command is here for reference:
+
+```
+TODO: Add training output
+```
+
+For validation, the following command is used:
+
+```
+uv run python validate.py --checkpoint checkpoints/best_model.pt --data-path ./data --data-type folder --save-images --num-samples 5
+```
+
 ## What's Next?
 
 Now we have two pieces:
+
 1. **Video Tokenizer** (folder 1): frame → tokens
 2. **Inverse Dynamics** (folder 2): frames → actions
 
