@@ -10,7 +10,7 @@ The goal is to build intuition about how world models work from first principles
 
 ## Repository Structure
 
-Each numbered folder (e.g., `1.video-encoder-decoder`) contains a self-contained model implementation with:
+Each numbered folder (e.g., `1.video-tokenizer`) contains a self-contained model implementation with:
 
 - `data/` - Dataset files
 - `data_utils.py` - Dataset downloading and loading
