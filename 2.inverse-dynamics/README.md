@@ -1,3 +1,5 @@
+![thumbnail](../assets/2.inverse-dynamics/thumbnail.png)
+
 # 2. Inverse Dynamics
 
 The second question we are going to answer in this repository is **how to get actions for training a world model**.
