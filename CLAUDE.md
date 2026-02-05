@@ -11,6 +11,7 @@ The goal is to build intuition about how world models work from first principles
 ## Repository Structure
 
 Each numbered folder (e.g., `1.video-encoder-decoder`) contains a self-contained model implementation with:
+
 - `data/` - Dataset files
 - `data_utils.py` - Dataset downloading and loading
 - `models/` - Model architecture and component models
@@ -23,6 +24,7 @@ Folders are meant to be explored sequentially (1 to n) to build intuition about 
 ## Key Concepts
 
 The three core questions answered by each implementation:
+
 1. How to represent the video frame (e.g., VAE encoding)
 2. How to represent the action (discrete or continuous vectors)
 3. Where to get the action (inverse dynamics model from frame pairs, controller overlay extraction, etc.)
@@ -32,7 +34,8 @@ The three core questions answered by each implementation:
 ### Package Management with uv
 
 Always use `uv` for everything Python-related:
-- Run Python scripts: `uv run python script.py` or `uv run train.py`
+
+- Run Python scripts: `uv run script.py` or `uv run train.py`
 - Add dependencies: `uv add package_name`
 - Add dev dependencies: `uv add --dev package_name`
 - Never use `pip install` or `python` directly
@@ -52,6 +55,7 @@ Always use `uv` for everything Python-related:
 - Explain tensor dimension notation explicitly in comments
 
 Example of dimension notation:
+
 ```python
 # x: (B, C, H, W) - batch, channels, height, width
 # B = batch size (number of samples processed together)
@@ -80,6 +84,7 @@ Each folder's README should follow a first-principles reasoning structure:
 4. **Show the code**: Link to relevant files and include code snippets with explanations
 
 Structure template:
+
 ```markdown
 # Component Name
 
@@ -92,9 +97,10 @@ Structure template:
 ## The Questions
 
 Out of first principles, we need to answer:
+
 1. [Question 1]
 2. [Question 2]
-...
+   ...
 
 ## The Solutions
 
@@ -105,16 +111,20 @@ Out of first principles, we need to answer:
 From [path/to/file.py](path/to/file.py):
 
 \`\`\`python
+
 # Code snippet with comments
+
 \`\`\`
 
 [Explain the key insight]
 
 ### 2. [Answer to Question 2]
+
 ...
 ```
 
 Guidelines:
+
 - Use "what if" thinking to explore alternatives
 - Link to source files: `From [models/fsq.py](models/fsq.py):`
 - Include code snippets that show the key logic (not full implementations)
@@ -124,6 +134,7 @@ Guidelines:
 ### Code Philosophy
 
 This codebase prioritizes clarity and learning over optimization:
+
 - Expect redundant code and minimal abstractions - this is intentional for building intuition
 - Each folder should be self-contained and understandable in isolation
 - Prefer explicit over implicit - show all the steps clearly

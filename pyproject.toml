@@ -10,6 +10,7 @@ dependencies = [
     "torch>=2.0.0",
     "einops>=0.7.0",
     "pillow>=10.0.0",
+    "pygame>=2.6.1",
 ]
 
 [tool.uv.workspace]
