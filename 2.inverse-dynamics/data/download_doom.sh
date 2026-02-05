@@ -20,8 +20,8 @@ ZIP_FILE="$SCRIPT_DIR/320x240.zip"
 TEMP_DIR="$SCRIPT_DIR/.temp_extract"
 
 # Processing parameters - adjust these as needed
-MAX_VIDEOS=30           # Number of videos to keep
-CLIP_DURATION=30        # Seconds per clip (30 videos × 30s = 15 min total)
+MAX_VIDEOS=100   # Number of videos to keep
+CLIP_DURATION=60 # Seconds per clip (30 videos × 30s = 15 min total)
 
 echo "Doom Gameplay Dataset Downloader"
 echo "================================"
@@ -31,10 +31,10 @@ echo ""
 
 # Step 1: Download
 if [ -f "$ZIP_FILE" ]; then
-    echo "[1/3] ZIP exists, skipping download..."
+  echo "[1/3] ZIP exists, skipping download..."
 else
-    echo "[1/3] Downloading (~25.8 GiB)..."
-    curl -L -o "$ZIP_FILE" "$DATASET_URL" --progress-bar
+  echo "[1/3] Downloading (~25.8 GiB)..."
+  curl -L -o "$ZIP_FILE" "$DATASET_URL" --progress-bar
 fi
 
 # Step 2: Extract to temp
@@ -50,16 +50,16 @@ VIDEOS_DIR=$(find "$TEMP_DIR" -name "*.mp4" -type f -exec dirname {} \; | head -
 echo "[3/3] Processing videos in parallel..."
 
 # Detect number of CPU cores
-if command -v nproc &> /dev/null; then
-    NUM_CORES=$(nproc)
+if command -v nproc &>/dev/null; then
+  NUM_CORES=$(nproc)
 else
-    NUM_CORES=$(sysctl -n hw.ncpu)  # macOS fallback
+  NUM_CORES=$(sysctl -n hw.ncpu) # macOS fallback
 fi
 echo "      Using $NUM_CORES cores"
 
 # Create a temporary processing script
 PROCESS_SCRIPT="$SCRIPT_DIR/.process_video.sh"
-cat > "$PROCESS_SCRIPT" << 'SCRIPT'
+cat >"$PROCESS_SCRIPT" <<'SCRIPT'
 #!/bin/bash
 video="$1"
 outdir="$2"
@@ -75,8 +75,8 @@ SCRIPT
 chmod +x "$PROCESS_SCRIPT"
 
 # Process in parallel using xargs
-find "$VIDEOS_DIR" -name "*.mp4" -type f | head -n "$MAX_VIDEOS" | \
-    xargs -P "$NUM_CORES" -I {} "$PROCESS_SCRIPT" {} "$SCRIPT_DIR" "$CLIP_DURATION"
+find "$VIDEOS_DIR" -name "*.mp4" -type f | head -n "$MAX_VIDEOS" |
+  xargs -P "$NUM_CORES" -I {} "$PROCESS_SCRIPT" {} "$SCRIPT_DIR" "$CLIP_DURATION"
 
 # Remove temp script
 rm -f "$PROCESS_SCRIPT"
