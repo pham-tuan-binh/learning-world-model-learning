@@ -596,6 +596,158 @@ def visualize_variance_penalty(save_path: str):
     print(f"  Saved to {save_path}")
 
 
+def visualize_inference_pipeline(
+    checkpoint_path: str,
+    video_path: str,
+    save_path: str,
+    num_frames: int = 4,
+):
+    """
+    Visualize the full inference pipeline: frames → actions → predictions.
+
+    Shows:
+    - Row 1: Original frames from video
+    - Row 2: Inferred action between each frame pair
+    - Row 3: Predicted next frames from decoder
+
+    Args:
+        checkpoint_path: Path to model checkpoint
+        video_path: Path to sample video
+        save_path: Where to save the visualization
+        num_frames: Number of frames to visualize
+    """
+    print("Generating inference pipeline visualization...")
+
+    import torch
+    try:
+        import cv2
+    except ImportError:
+        print("  OpenCV not available, skipping inference visualization")
+        return
+
+    from inverse_dynamics import LatentActionModel
+
+    # Action index to vector mapping
+    ACTION_VECTORS = {
+        0: [-1, -1, -1], 1: [+1, -1, -1], 2: [-1, +1, -1], 3: [+1, +1, -1],
+        4: [-1, -1, +1], 5: [+1, -1, +1], 6: [-1, +1, +1], 7: [+1, +1, +1],
+    }
+
+    def action_vector_to_index(action_vector):
+        bits = [(1 if a > 0 else 0) for a in action_vector]
+        return bits[0] * 1 + bits[1] * 2 + bits[2] * 4
+
+    # Load model
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    config = checkpoint["config"]
+
+    model = LatentActionModel(
+        frame_size=config.model.frame_size,
+        n_actions=config.model.n_actions,
+        patch_size=config.model.patch_size,
+        embed_dim=config.model.embed_dim,
+        num_heads=config.model.num_heads,
+        num_blocks=config.model.num_blocks,
+        use_adaptive_conditioning=config.model.use_adaptive_conditioning,
+    )
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model = model.to(device)
+    model.eval()
+
+    # Load video frames
+    cap = cv2.VideoCapture(video_path)
+    frames = []
+    while len(frames) < num_frames:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = cv2.resize(frame, (config.model.frame_size, config.model.frame_size))
+        frame_tensor = torch.from_numpy(frame).permute(2, 0, 1).float() / 255.0
+        frames.append(frame_tensor)
+    cap.release()
+
+    if len(frames) < num_frames:
+        print(f"  Warning: Only loaded {len(frames)} frames")
+        num_frames = len(frames)
+
+    # Stack frames and run inference
+    frames_tensor = torch.stack(frames, dim=0).unsqueeze(0).to(device)  # (1, T, C, H, W)
+
+    with torch.no_grad():
+        # Encode to get actions
+        actions = model.encode(frames_tensor)  # (1, T-1, A)
+        # Decode to get predictions
+        _, pred_frames = model(frames_tensor)  # (1, T-1, C, H, W)
+
+    actions = actions[0].cpu()  # (T-1, A)
+    pred_frames = pred_frames[0].cpu()  # (T-1, C, H, W)
+    frames_tensor = frames_tensor[0].cpu()  # (T, C, H, W)
+
+    # Create visualization
+    fig, axes = plt.subplots(3, num_frames, figsize=(4 * num_frames, 12))
+
+    # Row 1: Original frames
+    for t in range(num_frames):
+        ax = axes[0, t]
+        img = frames_tensor[t].permute(1, 2, 0).numpy()
+        ax.imshow(img.clip(0, 1))
+        ax.set_title(f'Frame {t+1}', fontsize=12, fontweight='bold')
+        ax.axis('off')
+    axes[0, 0].set_ylabel('Original\nFrames', fontsize=12, fontweight='bold', rotation=0, ha='right', va='center')
+
+    # Row 2: Inferred actions (shown as text boxes between frames)
+    for t in range(num_frames):
+        ax = axes[1, t]
+        ax.set_xlim(0, 10)
+        ax.set_ylim(0, 10)
+        ax.axis('off')
+
+        if t < num_frames - 1:
+            action_vec = actions[t].tolist()
+            action_idx = action_vector_to_index(action_vec)
+
+            # Draw action box
+            rect = mpatches.FancyBboxPatch((1, 2), 8, 6, boxstyle="round,pad=0.3",
+                                           facecolor='salmon', edgecolor='black', linewidth=2)
+            ax.add_patch(rect)
+
+            # Action info
+            ax.text(5, 6.5, f'Action {action_idx + 1}', ha='center', va='center',
+                    fontsize=14, fontweight='bold')
+            ax.text(5, 4.5, f'{ACTION_VECTORS[action_idx]}', ha='center', va='center',
+                    fontsize=11)
+            raw_str = f'[{action_vec[0]:+.2f}, {action_vec[1]:+.2f}, {action_vec[2]:+.2f}]'
+            ax.text(5, 2.8, f'raw: {raw_str}', ha='center', va='center',
+                    fontsize=8, style='italic', color='gray')
+        else:
+            ax.text(5, 5, '(end)', ha='center', va='center', fontsize=10, color='gray')
+
+    axes[1, 0].set_ylabel('Inferred\nActions', fontsize=12, fontweight='bold', rotation=0, ha='right', va='center')
+
+    # Row 3: Predicted frames
+    for t in range(num_frames):
+        ax = axes[2, t]
+        if t == 0:
+            # First frame is input, show as dimmed
+            img = frames_tensor[0].permute(1, 2, 0).numpy() * 0.5 + 0.25
+            ax.imshow(img.clip(0, 1))
+            ax.set_title('(input)', fontsize=10, color='gray')
+        else:
+            img = pred_frames[t-1].permute(1, 2, 0).numpy()
+            ax.imshow(img.clip(0, 1))
+            ax.set_title(f'Pred {t+1}', fontsize=12)
+        ax.axis('off')
+    axes[2, 0].set_ylabel('Predicted\nFrames', fontsize=12, fontweight='bold', rotation=0, ha='right', va='center')
+
+    plt.suptitle('Inverse Dynamics Pipeline: Frames → Actions → Predictions', fontsize=14, fontweight='bold', y=0.98)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches='tight', facecolor='white')
+    plt.close()
+    print(f"  Saved to {save_path}")
+
+
 def main():
     """Generate all visualizations."""
     # Create output directory
@@ -610,6 +762,25 @@ def main():
     visualize_token_masking(str(output_dir / "token_masking.png"))
     visualize_adaptive_conditioning(str(output_dir / "adaptive_conditioning.png"))
     visualize_variance_penalty(str(output_dir / "variance_penalty.png"))
+
+    # Generate inference pipeline visualization if checkpoint and data exist
+    checkpoint_path = Path(__file__).parent / "checkpoints" / "best_model.pt"
+    data_dir = Path(__file__).parent / "data"
+
+    if checkpoint_path.exists() and data_dir.exists():
+        # Find a sample video
+        video_files = list(data_dir.glob("*.mp4")) + list(data_dir.glob("*.avi"))
+        if video_files:
+            visualize_inference_pipeline(
+                str(checkpoint_path),
+                str(video_files[0]),
+                str(output_dir / "inference_pipeline.png"),
+                num_frames=10,
+            )
+        else:
+            print("  No video files found in data/, skipping inference visualization")
+    else:
+        print("  Checkpoint or data not found, skipping inference visualization")
 
     print(f"\nAll visualizations saved to {output_dir}/")
 

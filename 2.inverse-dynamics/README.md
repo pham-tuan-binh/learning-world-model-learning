@@ -400,21 +400,78 @@ Training: minimize reconstruction loss + variance penalty
 
 ## Usage
 
+All commands should be run from the **repository root** directory.
+
+### Training
+
 ```bash
 # Train with dummy data (sanity check)
-uv run train.py --use-dummy-data --num-epochs 10
+uv run ./2.inverse-dynamics/train.py --use-dummy-data --num-epochs 10
 
 # Train with video folder
-uv run train.py --data-path /path/to/videos --data-type folder
+uv run ./2.inverse-dynamics/train.py --data-path ./2.inverse-dynamics/data --data-type folder
 
 # Train with more actions (16 = 2^4)
-uv run train.py --data-path /path/to/videos --n-actions 16
+uv run ./2.inverse-dynamics/train.py --data-path ./2.inverse-dynamics/data --n-actions 16
 
 # Disable adaptive conditioning (uses only additive conditioning)
-uv run train.py --data-path /path/to/videos --no-adaptive-conditioning
+uv run ./2.inverse-dynamics/train.py --data-path ./2.inverse-dynamics/data --no-adaptive-conditioning
+```
 
-# Validate and analyze
-uv run validate.py --checkpoint checkpoints/best_model.pt --save-images
+### Validation
+
+```bash
+# Validate and analyze action distribution
+uv run ./2.inverse-dynamics/validate.py \
+  --checkpoint ./2.inverse-dynamics/checkpoints/best_model.pt \
+  --data-path ./2.inverse-dynamics/data \
+  --data-type folder \
+  --save-images
+```
+
+### Infer Actions from Video
+
+Extract the chain of predicted actions from any video:
+
+```bash
+# Basic usage - prints action sequence
+uv run ./2.inverse-dynamics/debug/infer_actions.py \
+  --checkpoint ./2.inverse-dynamics/checkpoints/best_model.pt \
+  --video ./2.inverse-dynamics/data/sample.mp4
+
+# Save to JSON
+uv run ./2.inverse-dynamics/debug/infer_actions.py \
+  --checkpoint ./2.inverse-dynamics/checkpoints/best_model.pt \
+  --video ./2.inverse-dynamics/data/sample.mp4 \
+  --output actions.json
+
+# Process only first 100 frames, skip every 2nd frame
+uv run ./2.inverse-dynamics/debug/infer_actions.py \
+  --checkpoint ./2.inverse-dynamics/checkpoints/best_model.pt \
+  --video ./2.inverse-dynamics/data/sample.mp4 \
+  --max-frames 100 --frame-skip 2
+```
+
+### Interactive World Model Player
+
+Play the world model interactively by pressing keys 1-8 to select actions:
+
+```bash
+# Start with first frame of a video
+uv run ./2.inverse-dynamics/debug/play.py \
+  --checkpoint ./2.inverse-dynamics/checkpoints/best_model.pt \
+  --start-video ./2.inverse-dynamics/data/sample.mp4
+
+# Start with an image
+uv run ./2.inverse-dynamics/debug/play.py \
+  --checkpoint ./2.inverse-dynamics/checkpoints/best_model.pt \
+  --start-image ./2.inverse-dynamics/data/frame.png
+
+# Use OpenCV instead of pygame
+uv run ./2.inverse-dynamics/debug/play.py \
+  --checkpoint ./2.inverse-dynamics/checkpoints/best_model.pt \
+  --start-video ./2.inverse-dynamics/data/sample.mp4 \
+  --use-cv2
 ```
 
 ## What to Look For
@@ -439,50 +496,68 @@ During validation:
 ├── config.py                           # Hyperparameters
 ├── train.py                            # Training loop
 ├── validate.py                         # Evaluation and visualization
-└── inverse_dynamics/
-    ├── __init__.py                     # Package exports
-    └── models/
-        ├── __init__.py
-        └── latent_action_model.py      # Encoder + Decoder + Full model
+├── inverse_dynamics/
+│   ├── __init__.py                     # Package exports
+│   └── models/
+│       ├── __init__.py
+│       └── latent_action_model.py      # Encoder + Decoder + Full model
+└── debug/
+    ├── __init__.py
+    ├── infer_actions.py                # Extract action sequence from video
+    └── play.py                         # Interactive world model player
 ```
-
-## Reused Components
-
-This folder imports components from `1.video-tokenizer/`:
-
-- `PatchEmbedding`: Convert frames to patch tokens
-- `SpatioTemporalTransformer`: Attention over space and time (with optional action conditioning)
-- `SpatioTemporalPositionalEncoding`: Position information
-- `FiniteScalarQuantizer`: Discretize continuous latents
 
 ## Run Log
 
 To validate the model, I used gameplay footage from [Doom Gameplay Dataset](https://github.com/thavlik/doom-gameplay-dataset/tree/master?tab=readme-ov-file). The dataset has roughly 170 hours of Doom 1 and 2 gameplay at 320x240 resolution.
 
-For compute, I used a spot L4 GPU (24GB VRAM) instance on GCP with 16 CPU cores. The following parameters were used:
+I vibed a script to quickly download and process the data:
+
+```bash
+./2.inverse-dynamics/data/download_doom.sh
+```
+
+This downloads the full ~25.8 GiB archive, then extracts and trims 100 videos to 60 seconds each, giving roughly 1.67 hours of gameplay data.
+
+For compute, I used a spot L4 GPU (24GB VRAM) instance on GCP with 16 CPU cores. Training took roughly 50 minutes with the following parameters:
 
 ```
 uv run ./2.inverse-dynamics/train.py \
   --data-path ./2.inverse-dynamics/data/ \
   --data-type folder \
-  --batch-size 48 \
+  --batch-size 32 \
   --embed-dim 256 \
   --num-blocks 6 \
   --num-epochs 3 \
   --num-workers 16
 ```
 
-The output of such command is here for reference:
+![Training](../assets/2.inverse-dynamics/training.png)
+
+The training loss decreases steadily over epochs, showing the model is learning to reconstruct frames from actions.
+
+For validation, I ran:
 
 ```
-TODO: Add training output
+uv run ./2.inverse-dynamics/validate.py \
+  --checkpoint ./2.inverse-dynamics/checkpoints/best_model.pt \
+  --data-path ./2.inverse-dynamics/data \
+  --data-type folder \
+  --save-images
 ```
 
-For validation, the following command is used:
+![Validation](../assets/2.inverse-dynamics/validation.png)
 
-```
-uv run python validate.py --checkpoint checkpoints/best_model.pt --data-path ./data --data-type folder --save-images --num-samples 5
-```
+The validation shows original frames (top row) vs predicted frames (bottom row). The model learns to reconstruct the general scene structure, though fine details may be blurry.
+
+Here are some samples from the model:
+
+![Sample Output](../assets/2.inverse-dynamics/outputs/sample_1.png)
+![Sample Output](../assets/2.inverse-dynamics/inference_pipeline.png)
+
+You can also use play.py as guided above to try and see the decoder in action, but it won't be as good as the inference sample above. The decoder suffers greatly from drift, meaning error from one frame prediction carries to the next.
+
+I address the problem space briefly below. We'll solve this in the next article.
 
 ## What's Next?
 
@@ -492,6 +567,86 @@ Now we have two pieces:
 2. **Inverse Dynamics** (folder 2): frames → actions
 
 The inverse dynamics model gives us a way to extract actions from any video. But notice that our decoder here predicts frames directly. It's not using the tokenized representation from folder 1.
+
+### Why can't we just use the inverse dynamics decoder as our world model?
+
+Look at the decoder's frame reconstruction head in [inverse_dynamics/models/latent_action_model.py](inverse_dynamics/models/latent_action_model.py):
+
+```python
+# Frame reconstruction head - a simple linear projection
+self.frame_head = nn.Sequential(
+    nn.LayerNorm(embed_dim),
+    nn.Linear(embed_dim, 3 * patch_size * patch_size),  # embed → RGB directly
+    nn.Tanh(),
+)
+```
+
+This is just a linear layer that maps embeddings directly to pixel patches. Compare this to the video tokenizer's decoder in [video_tokenizer/models/video_tokenizer.py](../1.video-tokenizer/video_tokenizer/models/video_tokenizer.py):
+
+```python
+class VideoTokenizerDecoder(nn.Module):
+    def __init__(self, ...):
+        # Project from latent to embedding dimension
+        self.from_latent = nn.Linear(latent_dim, embed_dim)
+
+        # Full spatio-temporal transformer
+        self.transformer = SpatioTemporalTransformer(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            num_blocks=num_blocks,
+            causal_temporal=False,
+        )
+
+        # Proper patch unembedding
+        self.patch_unembed = PatchUnembedding(...)
+```
+
+The video tokenizer decoder is a full transformer that can model complex spatial relationships. The inverse dynamics decoder is just a linear head.
+
+### The loss functions tell the story
+
+The inverse dynamics model trains with pixel reconstruction loss:
+
+```python
+# From inverse_dynamics/models/latent_action_model.py
+target_frames = frames[:, 1:]  # Ground truth: frames 2 to T
+recon_loss = F.smooth_l1_loss(pred_frames, target_frames)  # pixel-level loss
+```
+
+A proper dynamics model trains with cross-entropy on discrete tokens:
+
+```python
+# From dynamics_model.py
+loss_per = nn.functional.cross_entropy(logits_flat, targets_flat, reduction='none')
+```
+
+Why does this matter?
+
+1. **Pixel loss is forgiving**: blurry predictions still get low loss
+2. **Token loss is precise**: you either predict the right token or you don't
+3. **Multi-step rollouts**: pixel errors compound; discrete tokens are more stable
+
+### The inverse dynamics decoder is a training signal, not a world model
+
+The inverse dynamics decoder exists to provide gradients for training the action encoder. It asks: "if these inferred actions are correct, can we predict the next frame?" The answer doesn't need to be pixel-perfect—it just needs to be good enough to guide action learning.
+
+A world model needs to generate coherent, high-quality video over many timesteps. This requires:
+
+1. **Operating in latent space**: predict discrete tokens, not continuous pixels
+2. **Using a high-quality decoder**: the pretrained video tokenizer decoder (folder 1)
+3. **Iterative refinement**: MaskGIT-style generation for multi-step predictions
+
+### The pipeline
+
+```
+Training:
+  1. Train video tokenizer (folder 1) → get discrete token vocabulary
+  2. Train inverse dynamics (folder 2) → get action labels from any video
+  3. Train dynamics model (folder 3) → predict tokens given tokens + action
+
+Inference:
+  current_tokens + action → [dynamics model] → next_tokens → [video tokenizer decoder] → pixels
+```
 
 The next step is to build the **dynamics model** that operates in token space: given video tokens + action, predict the next video tokens. This completes the world model pipeline and enables autoregressive generation of video sequences.
 

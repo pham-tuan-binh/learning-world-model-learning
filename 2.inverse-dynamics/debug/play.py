@@ -4,9 +4,10 @@ Interactive World Model Player.
 Play the learned world model by pressing keys 1-8 to select actions.
 The model predicts the next frame based on current frame + selected action.
 
-Usage:
-    uv run python play.py --checkpoint checkpoints/best_model.pt --start-image path/to/image.png
-    uv run python play.py --checkpoint checkpoints/best_model.pt --start-video path/to/video.mp4
+Usage (from repo root):
+    uv run ./2.inverse-dynamics/debug/play.py \
+        --checkpoint ./2.inverse-dynamics/checkpoints/best_model.pt \
+        --start-video ./2.inverse-dynamics/data/sample.mp4
 
 Controls:
     1-8: Select action (maps to 8 discrete action vectors)
@@ -36,21 +37,18 @@ except ImportError:
 from inverse_dynamics import LatentActionModel
 
 
-# Action mapping: key -> action vector
-# With action_dim=3, we have 2^3 = 8 possible actions
-# Each dimension is either -1 or +1 (binary quantization)
-ACTION_MAP = {
-    pygame.K_1 if PYGAME_AVAILABLE else ord('1'): [-1, -1, -1],  # Action 0
-    pygame.K_2 if PYGAME_AVAILABLE else ord('2'): [+1, -1, -1],  # Action 1
-    pygame.K_3 if PYGAME_AVAILABLE else ord('3'): [-1, +1, -1],  # Action 2
-    pygame.K_4 if PYGAME_AVAILABLE else ord('4'): [+1, +1, -1],  # Action 3
-    pygame.K_5 if PYGAME_AVAILABLE else ord('5'): [-1, -1, +1],  # Action 4
-    pygame.K_6 if PYGAME_AVAILABLE else ord('6'): [+1, -1, +1],  # Action 5
-    pygame.K_7 if PYGAME_AVAILABLE else ord('7'): [-1, +1, +1],  # Action 6
-    pygame.K_8 if PYGAME_AVAILABLE else ord('8'): [+1, +1, +1],  # Action 7
+# Action mappings
+ACTION_VECTORS = {
+    0: [-1, -1, -1],
+    1: [+1, -1, -1],
+    2: [-1, +1, -1],
+    3: [+1, +1, -1],
+    4: [-1, -1, +1],
+    5: [+1, -1, +1],
+    6: [-1, +1, +1],
+    7: [+1, +1, +1],
 }
 
-# Reverse mapping for display
 ACTION_NAMES = {
     0: "[-1,-1,-1]",
     1: "[+1,-1,-1]",
@@ -63,8 +61,11 @@ ACTION_NAMES = {
 }
 
 
-def load_model(checkpoint_path: str, device: str) -> LatentActionModel:
-    """Load the trained model from checkpoint."""
+def load_model(checkpoint_path: str, device: str = None):
+    """Load a trained LatentActionModel from checkpoint."""
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
     print(f"Loading checkpoint from {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     config = checkpoint["config"]
@@ -90,109 +91,96 @@ def load_model(checkpoint_path: str, device: str) -> LatentActionModel:
 
 
 def load_start_frame(path: str, frame_size: int) -> torch.Tensor:
-    """
-    Load starting frame from image or video.
+    """Load a single frame from image or video (first frame)."""
+    if not CV2_AVAILABLE:
+        raise ImportError("OpenCV required. Install with: uv add opencv-python")
 
-    Returns:
-        frame: Tensor of shape (C, H, W) with values in [0, 1]
-    """
     path = Path(path)
 
-    if not CV2_AVAILABLE:
-        raise ImportError("OpenCV (cv2) required for loading images/videos. Install with: uv add opencv-python")
-
     if path.suffix.lower() in ['.mp4', '.avi', '.mov', '.webm']:
-        # Load first frame from video
         cap = cv2.VideoCapture(str(path))
         ret, frame = cap.read()
         cap.release()
         if not ret:
             raise ValueError(f"Could not read video: {path}")
     else:
-        # Load image
         frame = cv2.imread(str(path))
         if frame is None:
             raise ValueError(f"Could not read image: {path}")
 
-    # Convert BGR to RGB
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-    # Resize to model's expected size
     frame = cv2.resize(frame, (frame_size, frame_size))
-
-    # Convert to tensor: (H, W, C) -> (C, H, W), normalize to [0, 1]
     frame = torch.from_numpy(frame).permute(2, 0, 1).float() / 255.0
 
     return frame
 
 
 def create_dummy_frame(frame_size: int) -> torch.Tensor:
-    """Create a dummy starting frame (random noise or solid color)."""
-    # Create a simple gradient or random frame
-    frame = torch.rand(3, frame_size, frame_size)
-    return frame
+    """Create a dummy starting frame (random noise)."""
+    return torch.rand(3, frame_size, frame_size)
 
 
-def predict_next_frame(
-    model: LatentActionModel,
-    current_frame: torch.Tensor,
-    action: list,
-    device: str,
-) -> torch.Tensor:
-    """
-    Predict the next frame given current frame and action.
+def action_vector_to_index(action_vector) -> int:
+    """Convert action vector to index (0-7)."""
+    bits = [(1 if a > 0 else 0) for a in action_vector]
+    return bits[0] * 1 + bits[1] * 2 + bits[2] * 4
 
-    Args:
-        model: The trained LatentActionModel
-        current_frame: Current frame tensor (C, H, W) in [0, 1]
-        action: Action vector [a1, a2, a3] where each is -1 or +1
-        device: Device to run on
 
-    Returns:
-        next_frame: Predicted frame tensor (C, H, W) in [0, 1]
-    """
+def get_action_key_map(use_pygame: bool = False) -> dict:
+    """Get keyboard key to action vector mapping."""
+    if use_pygame and PYGAME_AVAILABLE:
+        return {
+            pygame.K_1: ACTION_VECTORS[0],
+            pygame.K_2: ACTION_VECTORS[1],
+            pygame.K_3: ACTION_VECTORS[2],
+            pygame.K_4: ACTION_VECTORS[3],
+            pygame.K_5: ACTION_VECTORS[4],
+            pygame.K_6: ACTION_VECTORS[5],
+            pygame.K_7: ACTION_VECTORS[6],
+            pygame.K_8: ACTION_VECTORS[7],
+        }
+    return {
+        ord('1'): ACTION_VECTORS[0],
+        ord('2'): ACTION_VECTORS[1],
+        ord('3'): ACTION_VECTORS[2],
+        ord('4'): ACTION_VECTORS[3],
+        ord('5'): ACTION_VECTORS[4],
+        ord('6'): ACTION_VECTORS[5],
+        ord('7'): ACTION_VECTORS[6],
+        ord('8'): ACTION_VECTORS[7],
+    }
+
+
+def tensor_to_numpy(frame: torch.Tensor, target_size: int = None) -> np.ndarray:
+    """Convert frame tensor to numpy array for display."""
+    frame_np = (frame.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
+    if target_size is not None and CV2_AVAILABLE:
+        frame_np = cv2.resize(frame_np, (target_size, target_size), interpolation=cv2.INTER_NEAREST)
+    return frame_np
+
+
+def predict_next_frame(model, current_frame: torch.Tensor, action: list, device: str) -> torch.Tensor:
+    """Predict the next frame given current frame and action."""
     with torch.no_grad():
-        # Prepare frame: (C, H, W) -> (1, 2, C, H, W)
-        # The decoder expects T frames and uses frames[:, :-1] as input
-        # So we provide [current_frame, dummy] and it uses current_frame
-        frame_batch = current_frame.unsqueeze(0).unsqueeze(0)  # (1, 1, C, H, W)
-        frame_batch = frame_batch.repeat(1, 2, 1, 1, 1)  # (1, 2, C, H, W)
+        frame_batch = current_frame.unsqueeze(0).unsqueeze(0)
+        frame_batch = frame_batch.repeat(1, 2, 1, 1, 1)
         frame_batch = frame_batch.to(device)
 
-        # Prepare action: (1, 1, A)
         action_tensor = torch.tensor(action, dtype=torch.float32)
-        action_tensor = action_tensor.unsqueeze(0).unsqueeze(0)  # (1, 1, A)
+        action_tensor = action_tensor.unsqueeze(0).unsqueeze(0)
         action_tensor = action_tensor.to(device)
 
-        # Decode
-        pred_frame = model.decode(frame_batch, action_tensor)  # (1, 1, C, H, W)
-
-        # Extract single frame
-        next_frame = pred_frame[0, 0].cpu()  # (C, H, W)
+        pred_frame = model.decode(frame_batch, action_tensor)
+        next_frame = pred_frame[0, 0].cpu()
 
     return next_frame
 
 
 def tensor_to_surface(frame: torch.Tensor, display_size: int) -> "pygame.Surface":
     """Convert frame tensor to pygame surface."""
-    # (C, H, W) -> (H, W, C), scale to [0, 255]
-    frame_np = (frame.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
-
-    # Resize for display
-    if CV2_AVAILABLE:
-        frame_np = cv2.resize(frame_np, (display_size, display_size), interpolation=cv2.INTER_NEAREST)
-
-    # Create pygame surface
+    frame_np = tensor_to_numpy(frame, display_size)
     surface = pygame.surfarray.make_surface(frame_np.swapaxes(0, 1))
     return surface
-
-
-def action_vector_to_index(action: list) -> int:
-    """Convert action vector to index (0-7)."""
-    # [-1, +1] -> [0, 1]
-    bits = [(a + 1) // 2 for a in action]
-    # Binary to decimal
-    return bits[0] * 1 + bits[1] * 2 + bits[2] * 4
 
 
 def run_pygame(model, config, start_frame, device, display_size):
@@ -202,7 +190,6 @@ def run_pygame(model, config, start_frame, device, display_size):
 
     pygame.init()
 
-    # Create window
     screen = pygame.display.set_mode((display_size, display_size + 60))
     pygame.display.set_caption("World Model Player - Press 1-8 for actions")
 
@@ -215,6 +202,8 @@ def run_pygame(model, config, start_frame, device, display_size):
     frame_count = 0
     save_count = 0
 
+    action_map = get_action_key_map(use_pygame=True)
+
     running = True
     while running:
         for event in pygame.event.get():
@@ -224,22 +213,19 @@ def run_pygame(model, config, start_frame, device, display_size):
                 if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
                     running = False
                 elif event.key == pygame.K_r:
-                    # Reset to initial frame
                     current_frame = initial_frame.clone()
                     frame_count = 0
                     last_action = None
                     print("Reset to initial frame")
                 elif event.key == pygame.K_s:
-                    # Save current frame
                     save_path = f"frame_{save_count:04d}.png"
-                    frame_np = (current_frame.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
+                    frame_np = tensor_to_numpy(current_frame)
                     if CV2_AVAILABLE:
                         cv2.imwrite(save_path, cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR))
                         print(f"Saved frame to {save_path}")
                     save_count += 1
-                elif event.key in ACTION_MAP:
-                    # Predict next frame with selected action
-                    action = ACTION_MAP[event.key]
+                elif event.key in action_map:
+                    action = action_map[event.key]
                     current_frame = predict_next_frame(model, current_frame, action, device)
                     last_action = action
                     frame_count += 1
@@ -247,12 +233,10 @@ def run_pygame(model, config, start_frame, device, display_size):
                     action_idx = action_vector_to_index(action)
                     print(f"Frame {frame_count}: Action {action_idx + 1} {ACTION_NAMES[action_idx]}")
 
-        # Draw frame
         surface = tensor_to_surface(current_frame, display_size)
         screen.fill((30, 30, 30))
         screen.blit(surface, (0, 0))
 
-        # Draw info bar
         info_y = display_size + 5
         frame_text = font.render(f"Frame: {frame_count}", True, (255, 255, 255))
         screen.blit(frame_text, (10, info_y))
@@ -272,7 +256,7 @@ def run_pygame(model, config, start_frame, device, display_size):
 
 
 def run_cv2(model, config, start_frame, device, display_size):
-    """Run the interactive player using OpenCV (fallback if pygame not available)."""
+    """Run the interactive player using OpenCV."""
     if not CV2_AVAILABLE:
         raise ImportError("OpenCV required. Install with: uv add opencv-python")
 
@@ -288,24 +272,12 @@ def run_cv2(model, config, start_frame, device, display_size):
     print("  Q/ESC: Quit")
     print()
 
-    cv2_action_map = {
-        ord('1'): [-1, -1, -1],
-        ord('2'): [+1, -1, -1],
-        ord('3'): [-1, +1, -1],
-        ord('4'): [+1, +1, -1],
-        ord('5'): [-1, -1, +1],
-        ord('6'): [+1, -1, +1],
-        ord('7'): [-1, +1, +1],
-        ord('8'): [+1, +1, +1],
-    }
+    action_map = get_action_key_map(use_pygame=False)
 
     while True:
-        # Convert frame for display
-        frame_np = (current_frame.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
-        frame_np = cv2.resize(frame_np, (display_size, display_size), interpolation=cv2.INTER_NEAREST)
+        frame_np = tensor_to_numpy(current_frame, display_size)
         frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
 
-        # Add text overlay
         cv2.putText(frame_bgr, f"Frame: {frame_count}", (10, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         cv2.putText(frame_bgr, "Press 1-8 for actions, Q to quit", (10, display_size - 10),
@@ -315,7 +287,7 @@ def run_cv2(model, config, start_frame, device, display_size):
 
         key = cv2.waitKey(0) & 0xFF
 
-        if key == ord('q') or key == 27:  # Q or ESC
+        if key == ord('q') or key == 27:
             break
         elif key == ord('r'):
             current_frame = initial_frame.clone()
@@ -326,8 +298,8 @@ def run_cv2(model, config, start_frame, device, display_size):
             cv2.imwrite(save_path, frame_bgr)
             print(f"Saved frame to {save_path}")
             save_count += 1
-        elif key in cv2_action_map:
-            action = cv2_action_map[key]
+        elif key in action_map:
+            action = action_map[key]
             current_frame = predict_next_frame(model, current_frame, action, device)
             frame_count += 1
 
@@ -339,32 +311,20 @@ def run_cv2(model, config, start_frame, device, display_size):
 
 def main():
     parser = argparse.ArgumentParser(description="Interactive World Model Player")
-    parser.add_argument("--checkpoint", type=str, required=True,
-                        help="Path to model checkpoint")
-    parser.add_argument("--start-image", type=str,
-                        help="Path to starting image")
-    parser.add_argument("--start-video", type=str,
-                        help="Path to starting video (uses first frame)")
-    parser.add_argument("--display-size", type=int, default=512,
-                        help="Display window size (default: 512)")
-    parser.add_argument("--device", type=str, default=None,
-                        help="Device to use (default: auto-detect)")
-    parser.add_argument("--use-cv2", action="store_true",
-                        help="Use OpenCV instead of pygame for display")
+    parser.add_argument("--checkpoint", type=str, required=True)
+    parser.add_argument("--start-image", type=str)
+    parser.add_argument("--start-video", type=str)
+    parser.add_argument("--display-size", type=int, default=512)
+    parser.add_argument("--device", type=str, default=None)
+    parser.add_argument("--use-cv2", action="store_true")
 
     args = parser.parse_args()
 
-    # Auto-detect device
-    if args.device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    else:
-        device = args.device
+    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Load model
     model, config = load_model(args.checkpoint, device)
 
-    # Load or create starting frame
     if args.start_image:
         start_frame = load_start_frame(args.start_image, config.model.frame_size)
         print(f"Loaded starting frame from: {args.start_image}")
@@ -380,7 +340,6 @@ def main():
     print(f"Display size: {args.display_size}x{args.display_size}")
     print()
 
-    # Run player
     if args.use_cv2 or not PYGAME_AVAILABLE:
         if not PYGAME_AVAILABLE:
             print("pygame not available, using OpenCV")
