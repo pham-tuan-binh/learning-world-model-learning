@@ -46,29 +46,35 @@ unzip -q -o "$ZIP_FILE" -d "$TEMP_DIR"
 # Find videos
 VIDEOS_DIR=$(find "$TEMP_DIR" -name "*.mp4" -type f -exec dirname {} \; | head -1)
 
-# Step 3: Process and output to data/
-echo "[3/3] Processing videos..."
+# Step 3: Process and output to data/ (parallel)
+echo "[3/3] Processing videos in parallel..."
 
-count=0
-for video in "$VIDEOS_DIR"/*.mp4; do
-    [ $count -ge $MAX_VIDEOS ] && break
+# Detect number of CPU cores
+if command -v nproc &> /dev/null; then
+    NUM_CORES=$(nproc)
+else
+    NUM_CORES=$(sysctl -n hw.ncpu)  # macOS fallback
+fi
+echo "      Using $NUM_CORES cores"
 
-    filename=$(basename "$video")
-    output="$SCRIPT_DIR/$filename"
+# Export variables for subshells
+export SCRIPT_DIR CLIP_DURATION
 
-    printf "  [%02d/%02d] %s\n" $((count + 1)) $MAX_VIDEOS "$filename"
-
-    ffmpeg -y -i "$video" \
-        -t "$CLIP_DURATION" \
-        -c:v libx264 -preset fast -crf 23 \
-        -an -loglevel error \
-        "$output"
-
-    count=$((count + 1))
-done
+# Process in parallel using xargs
+find "$VIDEOS_DIR" -name "*.mp4" -type f | head -n "$MAX_VIDEOS" | \
+    xargs -P "$NUM_CORES" -I {} bash -c '
+        filename=$(basename "{}")
+        echo "      Processing: $filename"
+        ffmpeg -y -i "{}" \
+            -t "$CLIP_DURATION" \
+            -c:v libx264 -preset fast -crf 23 \
+            -an -loglevel error \
+            "$SCRIPT_DIR/$filename"
+    '
 
 # Cleanup
 rm -rf "$TEMP_DIR"
 echo ""
-echo "Done! Processed $count videos in $SCRIPT_DIR/"
-echo "Total: $(du -sh "$SCRIPT_DIR"/*.mp4 | tail -1 | cut -f1)"
+processed_count=$(ls -1 "$SCRIPT_DIR"/*.mp4 2>/dev/null | wc -l | tr -d ' ')
+echo "Done! Processed $processed_count videos in $SCRIPT_DIR/"
+echo "Total size: $(du -sh "$SCRIPT_DIR" | cut -f1)"
