@@ -189,7 +189,7 @@ Since most videos on the internet don't have action labels, what we can do is tr
 
 To combine both of them, we train another model that takes the current frame, current action and gives the next frame. This is how **Genie** [4] works and will be primarily how I discover world models in this repository.
 
-The in-depth article to answer this question will be released in February.
+The in-depth article to answer this question can be found [here](2.inverse-dynamics).
 
 ## Q4: Predicting the Next State
 
@@ -263,14 +263,21 @@ Each folder contains a model. You can go from folder 1 to n to understand the pr
 ```
 learning-world-model-learning/
 ├── 1.video-tokenizer/          # How to compress video frames
-│   ├── data/
-│   ├── models/
+│   ├── video_tokenizer/        # Model code (importable module)
+│   ├── checkpoints/
+│   ├── config.py
 │   ├── train.py
+│   ├── validate.py
 │   └── README.md
 ├── 2.inverse-dynamics/         # How to extract actions from frame pairs
-│   └── ...
-├── 3.dynamics-model/           # How to predict next frames
-│   └── ...
+│   ├── inverse_dynamics/       # Model code (importable module)
+│   ├── checkpoints/
+│   ├── data/
+│   ├── debug/
+│   ├── config.py
+│   ├── train.py
+│   ├── validate.py
+│   └── README.md
 └── ...
 ```
 
@@ -278,12 +285,13 @@ Inside each folder, you'll find:
 
 | File/Folder | Purpose |
 |-------------|---------|
-| `data/` | Dataset files |
-| `data_utils.py` | Data downloading and loading |
-| `models/` | Model code and components |
+| `<topic>/` | Model code as importable module (e.g., `video_tokenizer/`) |
+| `config.py` | Hyperparameters |
 | `train.py` | Training script |
 | `validate.py` | Validation script |
 | `checkpoints/` | Model checkpoints |
+| `data/` | Dataset files (optional) |
+| `debug/` | Debugging and inference tools (optional) |
 | `README.md` | First-principles explanation |
 
 The folder also contains a README which details my thinking process, sources, and intuition. Keep in mind, this is not written for optimization. You'll find a lot of redundant code and bare minimum code. It serves the purpose of building intuition.

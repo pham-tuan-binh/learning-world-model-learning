@@ -555,9 +555,11 @@ Here are some samples from the model:
 ![Sample Output](../assets/2.inverse-dynamics/outputs/sample_1.png)
 ![Sample Output](../assets/2.inverse-dynamics/inference_pipeline.png)
 
-You can also use play.py as guided above to try and see the decoder in action, but it won't be as good as the inference sample above. The decoder suffers greatly from drift, meaning error from one frame prediction carries to the next.
+You can also use play.py as guided above to try and see the decoder in action. In both cases, the decoder model cannot predict the next frame at all.
 
-I address the problem space briefly below. We'll solve this in the next article.
+If you pay close attention to the visualization above, you'll see the actions are just adding noise into the current frame.
+
+I've addressed the reason why briefly below. We'll solve this in the next article.
 
 ## What's Next?
 
