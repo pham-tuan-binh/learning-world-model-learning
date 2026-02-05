@@ -1,6 +1,6 @@
 # Learning World Model Learning
 
-![Cover](./assets/root/cover.png)
+![Cover](./assets/root/thumbnail.png)
 
 GPT-2 from OpenAI was trained on [40GB or 10 billion tokens of data](https://finbarr.ca/five-years-of-gpt-progress/). This was the accumulation of over 8 million web pages from the internet. Let's assume for the same amount of data, we can train a comparable model for general robotics, here's how much it would cost us:
 
@@ -40,11 +40,11 @@ To scale real world data collection to such point would require enormous efforts
 
 There are multiple methods teams are exploring to close this data gap:
 
-| Approach | Description | Examples |
-|----------|-------------|----------|
-| **Realistic Simulation** | Physics engines, 3D Gaussian splatting, neural rendering | Isaac Sim, MuJoCo |
-| **Low-cost Data Collection** | Reduce equipment costs for human demonstrations | UMI [1], GELLO [2], AirExo [3] |
-| **World Models** | Learn environment dynamics from videos, generate synthetic experience | Genie [4], Cosmos [5], V-JEPA [6] |
+| Approach                     | Description                                                           | Examples                          |
+| ---------------------------- | --------------------------------------------------------------------- | --------------------------------- |
+| **Realistic Simulation**     | Physics engines, 3D Gaussian splatting, neural rendering              | Isaac Sim, MuJoCo                 |
+| **Low-cost Data Collection** | Reduce equipment costs for human demonstrations                       | UMI [1], GELLO [2], AirExo [3]    |
+| **World Models**             | Learn environment dynamics from videos, generate synthetic experience | Genie [4], Cosmos [5], V-JEPA [6] |
 
 In this GitHub repo, I document my exploration into world models, which to me is the most viable method of data scaling in robotics. I'll go through my intuition and first principles on why world models even matter and how to build one from scratch using papers.
 
@@ -145,12 +145,12 @@ Again, a world model is a prediction model: given the current state and action, 
 
 Out of first principles, there are a few questions we have to answer:
 
-| Question | Challenge | Common Solutions |
-|----------|-----------|------------------|
-| **Q1: How do we represent the video frame?** | Raw pixels (`256x256x3` = 196K dims) are too high-dimensional | VAE, VQ-VAE, FSQ tokenizers |
-| **Q2: How do we represent the action?** | Actions vary across embodiments and tasks | Discrete tokens, continuous vectors, latent actions |
-| **Q3: Where do we get the action?** | Internet videos have no action labels | Inverse dynamics models, controller overlay extraction |
-| **Q4: How do we predict the next state?** | Must learn complex dynamics and interactions | Transformer, MaskGIT, diffusion models |
+| Question                                     | Challenge                                                     | Common Solutions                                       |
+| -------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------ |
+| **Q1: How do we represent the video frame?** | Raw pixels (`256x256x3` = 196K dims) are too high-dimensional | VAE, VQ-VAE, FSQ tokenizers                            |
+| **Q2: How do we represent the action?**      | Actions vary across embodiments and tasks                     | Discrete tokens, continuous vectors, latent actions    |
+| **Q3: Where do we get the action?**          | Internet videos have no action labels                         | Inverse dynamics models, controller overlay extraction |
+| **Q4: How do we predict the next state?**    | Must learn complex dynamics and interactions                  | Transformer, MaskGIT, diffusion models                 |
 
 These are the core questions of all world model training. In fact, you can understand any world model by just answering these four questions.
 
@@ -205,6 +205,7 @@ Given the latent representation of the current frame `z_t` and action `a_t`, how
 ```
 
 The dynamics model must learn to:
+
 - Understand how actions affect objects (pushing moves things)
 - Predict physical interactions (gravity, collisions)
 - Handle occlusions and reappearances
@@ -283,24 +284,24 @@ learning-world-model-learning/
 
 Inside each folder, you'll find:
 
-| File/Folder | Purpose |
-|-------------|---------|
-| `<topic>/` | Model code as importable module (e.g., `video_tokenizer/`) |
-| `config.py` | Hyperparameters |
-| `train.py` | Training script |
-| `validate.py` | Validation script |
-| `checkpoints/` | Model checkpoints |
-| `data/` | Dataset files (optional) |
-| `debug/` | Debugging and inference tools (optional) |
-| `README.md` | First-principles explanation |
+| File/Folder    | Purpose                                                    |
+| -------------- | ---------------------------------------------------------- |
+| `<topic>/`     | Model code as importable module (e.g., `video_tokenizer/`) |
+| `config.py`    | Hyperparameters                                            |
+| `train.py`     | Training script                                            |
+| `validate.py`  | Validation script                                          |
+| `checkpoints/` | Model checkpoints                                          |
+| `data/`        | Dataset files (optional)                                   |
+| `debug/`       | Debugging and inference tools (optional)                   |
+| `README.md`    | First-principles explanation                               |
 
 The folder also contains a README which details my thinking process, sources, and intuition. Keep in mind, this is not written for optimization. You'll find a lot of redundant code and bare minimum code. It serves the purpose of building intuition.
 
-The repository uses `uv` to handle dependencies. 
+The repository uses `uv` to handle dependencies.
 
 # Agentic Learning
 
-This repository is optimized for Claude Code. 
+This repository is optimized for Claude Code.
 
 I included my CLAUDE.md within this repository. It is instructed to replicate my way of writing and reasoning. I recommend pairing this repository with an agent and ask questions along the way.
 
