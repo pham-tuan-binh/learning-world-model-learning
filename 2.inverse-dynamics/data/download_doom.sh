@@ -57,20 +57,29 @@ else
 fi
 echo "      Using $NUM_CORES cores"
 
-# Export variables for subshells
-export SCRIPT_DIR CLIP_DURATION
+# Create a temporary processing script
+PROCESS_SCRIPT="$SCRIPT_DIR/.process_video.sh"
+cat > "$PROCESS_SCRIPT" << 'SCRIPT'
+#!/bin/bash
+video="$1"
+outdir="$2"
+duration="$3"
+filename=$(basename "$video")
+echo "      Processing: $filename"
+ffmpeg -y -i "$video" \
+    -t "$duration" \
+    -c:v libx264 -preset fast -crf 23 \
+    -an -loglevel error \
+    "$outdir/$filename"
+SCRIPT
+chmod +x "$PROCESS_SCRIPT"
 
 # Process in parallel using xargs
 find "$VIDEOS_DIR" -name "*.mp4" -type f | head -n "$MAX_VIDEOS" | \
-    xargs -P "$NUM_CORES" -I {} bash -c '
-        filename=$(basename "{}")
-        echo "      Processing: $filename"
-        ffmpeg -y -i "{}" \
-            -t "$CLIP_DURATION" \
-            -c:v libx264 -preset fast -crf 23 \
-            -an -loglevel error \
-            "$SCRIPT_DIR/$filename"
-    '
+    xargs -P "$NUM_CORES" -I {} "$PROCESS_SCRIPT" {} "$SCRIPT_DIR" "$CLIP_DURATION"
+
+# Remove temp script
+rm -f "$PROCESS_SCRIPT"
 
 # Cleanup
 rm -rf "$TEMP_DIR"
