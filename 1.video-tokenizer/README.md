@@ -532,7 +532,7 @@ I recommend implementing these yourself to learn.
 
 Now that we can tokenize video frames into discrete tokens, the next question is: **how do we predict future tokens?**
 
-Given the tokens for frames 1-4 and an action, can we predict the tokens for frame 5? This is what the dynamics model does - covered in `2.dynamics-model/`.
+Given the tokens for frames 1-4 and an action, can we predict the tokens for frame 5? This is what the dynamics model does - covered in [`3.dynamics`](../3.dynamics/README.md).
 
 ## References
 

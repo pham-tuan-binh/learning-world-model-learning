@@ -1,0 +1,137 @@
+name: lwm-full-train
+
+workdir: .
+
+file_mounts:
+  ~/persistent/checkpoints:
+    name: lwm-world-model-binhpham
+    store: GCS
+    mode: MOUNT
+  ~/persistent/data-cache:
+    name: lwm-world-model-binhpham
+    store: GCS
+    mode: MOUNT
+    _bucket_sub_path: data
+
+resources:
+  use_spot: true
+  cpus: 8+
+  memory: 64+
+  disk_size: 500
+  image_id: docker:nvcr.io/nvidia/pytorch:25.03-py3
+  ordered:
+    - infra: gcp
+      accelerators: A100-80GB:1
+    - infra: gcp
+      accelerators: A100:1
+    - infra: gcp
+      accelerators: L4:1
+
+envs:
+  EMBED_DIM: "256"
+  NUM_BLOCKS: "6"
+  NUM_WORKERS: "8"
+  BATCH_SIZE: "32"
+
+setup: |
+  set -e
+  if ! command -v uv >/dev/null 2>&1; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+  fi
+  export PATH="$HOME/.local/bin:$PATH"
+  uv sync --all-packages
+
+run: |
+  set -e
+  export PATH="$HOME/.local/bin:$PATH"
+  export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+  DATA_PATH="$HOME/data"           # local SSD — fast training reads
+  DATA_CACHE="$HOME/persistent/data-cache"  # GCS-backed — persists across runs
+  TOK_CKPT_DIR="$HOME/persistent/checkpoints/1.video-tokenizer"
+  IDM_CKPT_DIR="$HOME/persistent/checkpoints/2.inverse-dynamics"
+  DYN_CKPT_DIR="$HOME/persistent/checkpoints/3.dynamics"
+
+  mkdir -p "$DATA_PATH" "$TOK_CKPT_DIR" "$IDM_CKPT_DIR" "$DYN_CKPT_DIR"
+
+  # Populate local data from GCS cache, or generate and upload if cache is empty
+  if [ -z "$(ls -A "$DATA_PATH"/*.mp4 2>/dev/null)" ]; then
+    if [ -n "$(ls -A "$DATA_CACHE"/*.mp4 2>/dev/null)" ]; then
+      echo "=== Copying data from GCS cache to local disk ==="
+      cp "$DATA_CACHE"/*.mp4 "$DATA_PATH/"
+    else
+      echo "=== Generating dataset ==="
+      pip install vizdoom imageio-ffmpeg -q
+      python3 "$PWD/2.inverse-dynamics/data/generate_doom.py" \
+        --output-dir "$DATA_PATH" \
+        --num-videos 100 \
+        --fps 15 \
+        --duration 60
+      echo "=== Uploading dataset to GCS cache ==="
+      cp "$DATA_PATH"/*.mp4 "$DATA_CACHE/"
+    fi
+  fi
+
+  # Helper: find latest epoch checkpoint in a dir
+  latest_ckpt() { ls -t "$1"/checkpoint_epoch*.pt 2>/dev/null | head -1; }
+
+  # --- Stage 1: Video Tokenizer ---
+  if [ -f "$TOK_CKPT_DIR/final_model.pt" ]; then
+    echo "=== Stage 1: tokenizer already complete, skipping ==="
+  else
+    echo "=== Stage 1: Train video tokenizer ==="
+    RESUME=$(latest_ckpt "$TOK_CKPT_DIR")
+    RESUME_ARGS=(); [ -n "$RESUME" ] && RESUME_ARGS=(--resume "$RESUME") && echo "  Resuming from $RESUME"
+    uv run python 1.video-tokenizer/train.py \
+      --data-path "$DATA_PATH" \
+      --data-type folder \
+      --checkpoint-dir "$TOK_CKPT_DIR" \
+      --embed-dim "$EMBED_DIM" \
+      --num-blocks "$NUM_BLOCKS" \
+      --num-workers "$NUM_WORKERS" \
+      --batch-size "$BATCH_SIZE" \
+      --num-epochs 25 \
+      "${RESUME_ARGS[@]}"
+  fi
+
+  # --- Stage 2: Inverse Dynamics ---
+  if [ -f "$IDM_CKPT_DIR/final_model.pt" ]; then
+    echo "=== Stage 2: inverse dynamics already complete, skipping ==="
+  else
+    echo "=== Stage 2: Train inverse dynamics ==="
+    RESUME=$(latest_ckpt "$IDM_CKPT_DIR")
+    RESUME_ARGS=(); [ -n "$RESUME" ] && RESUME_ARGS=(--resume "$RESUME") && echo "  Resuming from $RESUME"
+    uv run python 2.inverse-dynamics/train.py \
+      --data-path "$DATA_PATH" \
+      --data-type folder \
+      --checkpoint-dir "$IDM_CKPT_DIR" \
+      --embed-dim "$EMBED_DIM" \
+      --num-blocks "$NUM_BLOCKS" \
+      --num-workers "$NUM_WORKERS" \
+      --batch-size "$BATCH_SIZE" \
+      --num-epochs 20 \
+      "${RESUME_ARGS[@]}"
+  fi
+
+  # --- Stage 3: Dynamics ---
+  if [ -f "$DYN_CKPT_DIR/final_model.pt" ]; then
+    echo "=== Stage 3: dynamics already complete, skipping ==="
+  else
+    echo "=== Stage 3: Train dynamics ==="
+    RESUME=$(latest_ckpt "$DYN_CKPT_DIR")
+    RESUME_ARGS=(); [ -n "$RESUME" ] && RESUME_ARGS=(--resume "$RESUME") && echo "  Resuming from $RESUME"
+    uv run --project 3.dynamics python 3.dynamics/train.py \
+      --data-path "$DATA_PATH" \
+      --data-type folder \
+      --tokenizer-checkpoint "$TOK_CKPT_DIR/best_model.pt" \
+      --inverse-dynamics-checkpoint "$IDM_CKPT_DIR/best_model.pt" \
+      --checkpoint-dir "$DYN_CKPT_DIR" \
+      --embed-dim "$EMBED_DIM" \
+      --num-blocks "$NUM_BLOCKS" \
+      --num-workers "$NUM_WORKERS" \
+      --batch-size "$BATCH_SIZE" \
+      --num-epochs 50 \
+      "${RESUME_ARGS[@]}"
+  fi
+
+  echo "=== All stages complete ==="
