@@ -16,6 +16,8 @@ The key insight is that we're creating a "vocabulary" of visual tokens that
 can represent any video frame, similar to how text tokens represent language.
 """
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -58,8 +60,8 @@ class VideoTokenizerEncoder(nn.Module):
         embed_dim: int = 128,
         num_heads: int = 8,
         num_blocks: int = 4,
-        latent_dim: int = 5,
-        num_bins: int = 4,
+        latent_dim: int = 3,
+        num_bins: int = 8,
         dropout: float = 0.0,
     ):
         super().__init__()
@@ -191,7 +193,7 @@ class VideoTokenizerDecoder(nn.Module):
         embed_dim: int = 128,
         num_heads: int = 8,
         num_blocks: int = 4,
-        latent_dim: int = 5,
+        latent_dim: int = 3,
         dropout: float = 0.0,
     ):
         super().__init__()
@@ -311,8 +313,8 @@ class VideoTokenizer(nn.Module):
         embed_dim: int = 128,
         num_heads: int = 8,
         num_blocks: int = 4,
-        latent_dim: int = 5,
-        num_bins: int = 4,
+        latent_dim: int = 3,
+        num_bins: int = 8,
         dropout: float = 0.0,
     ):
         super().__init__()
@@ -366,36 +368,64 @@ class VideoTokenizer(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
+        entropy_weight: float = 0.0,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Full forward pass: encode -> quantize -> decode.
 
         Args:
-            x: Video frames
-               Shape: (B, T, C, H, W)
-               Values should be normalized to [0, 1] or [-1, 1]
+            x: Video frames, shape (B, T, C, H, W)
+            entropy_weight: Weight for codebook entropy regularization.
+                Adds -entropy_weight * H(codebook) to the loss to prevent collapse.
 
         Returns:
-            loss: Reconstruction loss (MSE between input and output)
-                  Scalar tensor
-            x_hat: Reconstructed video frames
-                   Shape: (B, T, C, H, W)
-            indices: Token indices
-                     Shape: (B, T, N)
-                     Values in [0, codebook_size)
+            loss: Reconstruction loss + optional entropy regularization
+            x_hat: Reconstructed video frames, shape (B, T, C, H, W)
+            indices: Token indices, shape (B, T, N)
         """
-        # Encode to quantized latents
-        # z_q: (B, T, N, D), indices: (B, T, N)
-        z_q, indices, _ = self.encoder(x)
-
-        # Decode back to frames
-        # x_hat: (B, T, C, H, W)
+        z_q, indices, z = self.encoder(x)
         x_hat = self.decoder(z_q)
+        recon_loss = F.mse_loss(x_hat, x)
 
-        # Compute reconstruction loss (MSE)
-        loss = F.mse_loss(x_hat, x)
+        if entropy_weight > 0.0:
+            loss = recon_loss + entropy_weight * self._codebook_entropy_loss(z)
+        else:
+            loss = recon_loss
 
-        return loss, x_hat, indices
+        return loss, x_hat, indices, recon_loss
+
+    def _codebook_entropy_loss(self, z: torch.Tensor) -> torch.Tensor:
+        """
+        Entropy regularization loss to prevent codebook collapse.
+
+        Computes per-dimension soft assignment entropy over the batch and
+        returns its negative (so minimizing this term maximizes entropy).
+
+        Uses soft assignments via distance to bin centers so gradients flow
+        through the pre-quantization latents.
+        """
+        num_bins = self.encoder.num_bins
+
+        # z: (B, T, N, D) -> (M, D)
+        z_flat = z.reshape(-1, z.shape[-1])
+        z_bounded = torch.tanh(z_flat)
+        z_scaled = (z_bounded + 1) / 2 * (num_bins - 1)  # [0, num_bins-1]
+
+        # Soft assignment: distance to each bin center
+        # (M, D, 1) vs (num_bins,) -> (M, D, num_bins)
+        bin_centers = torch.arange(num_bins, device=z.device, dtype=z.dtype)
+        distances = (z_scaled.unsqueeze(-1) - bin_centers) ** 2
+        probs = F.softmax(-distances / 0.1, dim=-1)
+
+        # Average over batch to get marginal per-dimension distribution (D, num_bins)
+        avg_probs = probs.mean(dim=0)
+
+        # Per-dimension entropy, normalized by log(num_bins)
+        entropy = -(avg_probs * torch.log(avg_probs + 1e-10)).sum(dim=-1)
+        normalized_entropy = entropy.mean() / math.log(num_bins)
+
+        # Collapse penalty: 0 when entropy is maximal, 1 when fully collapsed
+        return 1.0 - normalized_entropy
 
     def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -467,8 +497,8 @@ if __name__ == "__main__":
         embed_dim=128,
         num_heads=8,
         num_blocks=4,
-        latent_dim=5,
-        num_bins=4,
+        latent_dim=3,
+        num_bins=8,
         dropout=0.0,
     )
 
@@ -486,7 +516,7 @@ if __name__ == "__main__":
     x = torch.randn(2, 4, 3, 128, 128)  # (B=2, T=4, C=3, H=128, W=128)
     print(f"Input shape: {x.shape}")
 
-    loss, x_hat, indices = model(x)
+    loss, x_hat, indices, recon_loss = model(x)
     print(f"Loss: {loss.item():.4f}")
     print(f"Output shape: {x_hat.shape}")
     print(f"Indices shape: {indices.shape}")

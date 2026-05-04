@@ -69,19 +69,19 @@ def visualize_action_quantization(save_path: str):
     Visualize binary action quantization (FSQ with 2 bins).
 
     Shows:
-    - Left: 3D scatter of continuous action vectors colored by discrete action
+    - Left: 2D scatter of continuous action vectors colored by discrete action
     - Middle: How tanh + rounding maps continuous to discrete
-    - Right: The 8 discrete action codes in binary form
+    - Right: The 4 discrete action codes in binary form
     """
     print("Generating action quantization visualization...")
 
     # Create binary FSQ quantizer (same as in LatentActionModel)
-    # action_dim=3, num_bins=2 -> 2^3 = 8 discrete actions
-    fsq = FiniteScalarQuantizer(latent_dim=3, num_bins=2)
+    # action_dim=2, num_bins=2 -> 2^2 = 4 discrete actions
+    fsq = FiniteScalarQuantizer(latent_dim=2, num_bins=2)
 
     # Generate random continuous action vectors
     torch.manual_seed(42)
-    z = torch.randn(500, 3) * 1.5  # 500 samples, 3 dimensions
+    z = torch.randn(500, 2) * 1.5  # 500 samples, 2 dimensions
 
     # Quantize
     with torch.no_grad():
@@ -90,23 +90,22 @@ def visualize_action_quantization(save_path: str):
     # Create figure
     fig = plt.figure(figsize=(15, 5))
 
-    # Left: 3D scatter plot of continuous actions colored by discrete action
-    ax1 = fig.add_subplot(131, projection='3d')
+    # Left: 2D scatter plot of continuous actions colored by discrete action
+    ax1 = fig.add_subplot(131)
 
     # Apply tanh to bound values for visualization
     z_bounded = torch.tanh(z).numpy()
     indices_np = indices.numpy()
 
-    # Color map for 8 actions
-    colors = plt.cm.tab10(np.linspace(0, 1, 8))
+    # Color map for 4 actions
+    colors = plt.cm.tab10(np.linspace(0, 1, 4))
 
-    for action_idx in range(8):
+    for action_idx in range(4):
         mask = indices_np == action_idx
         if mask.any():
             ax1.scatter(
                 z_bounded[mask, 0],
                 z_bounded[mask, 1],
-                z_bounded[mask, 2],
                 c=[colors[action_idx]],
                 label=f'Action {action_idx}',
                 alpha=0.6,
@@ -115,9 +114,9 @@ def visualize_action_quantization(save_path: str):
 
     ax1.set_xlabel('Dim 0', fontsize=10)
     ax1.set_ylabel('Dim 1', fontsize=10)
-    ax1.set_zlabel('Dim 2', fontsize=10)
     ax1.set_title('Continuous Actions → Discrete\n(colored by action index)', fontsize=11)
-    ax1.legend(loc='upper left', fontsize=7, ncol=2)
+    ax1.legend(loc='upper left', fontsize=9)
+    ax1.grid(True, alpha=0.3)
 
     # Middle: Quantization function for 1D
     ax2 = fig.add_subplot(132)
@@ -145,30 +144,26 @@ def visualize_action_quantization(save_path: str):
     # Right: Action codebook visualization
     ax3 = fig.add_subplot(133)
 
-    # Create 8 action codes as binary representations
+    # Create 4 action codes as binary representations
     action_codes = np.array([
-        [0, 0, 0],  # Action 0
-        [0, 0, 1],  # Action 1
-        [0, 1, 0],  # Action 2
-        [0, 1, 1],  # Action 3
-        [1, 0, 0],  # Action 4
-        [1, 0, 1],  # Action 5
-        [1, 1, 0],  # Action 6
-        [1, 1, 1],  # Action 7
+        [0, 0],  # Action 0
+        [0, 1],  # Action 1
+        [1, 0],  # Action 2
+        [1, 1],  # Action 3
     ])
 
     # Plot as heatmap
     im = ax3.imshow(action_codes.T, cmap='RdYlBu_r', aspect='auto', vmin=-0.5, vmax=1.5)
-    ax3.set_xticks(range(8))
-    ax3.set_xticklabels([f'{i}' for i in range(8)])
-    ax3.set_yticks(range(3))
-    ax3.set_yticklabels(['Dim 0', 'Dim 1', 'Dim 2'])
+    ax3.set_xticks(range(4))
+    ax3.set_xticklabels([f'{i}' for i in range(4)])
+    ax3.set_yticks(range(2))
+    ax3.set_yticklabels(['Dim 0', 'Dim 1'])
     ax3.set_xlabel('Action Index', fontsize=10)
-    ax3.set_title('Action Codebook\n(8 discrete actions = 2³)', fontsize=11)
+    ax3.set_title('Action Codebook\n(4 discrete actions = 2²)', fontsize=11)
 
     # Add text annotations
-    for i in range(8):
-        for j in range(3):
+    for i in range(4):
+        for j in range(2):
             ax3.text(i, j, str(action_codes[i, j]),
                      ha='center', va='center', fontsize=12, fontweight='bold',
                      color='white' if action_codes[i, j] == 1 else 'black')
@@ -629,13 +624,12 @@ def visualize_inference_pipeline(
 
     # Action index to vector mapping
     ACTION_VECTORS = {
-        0: [-1, -1, -1], 1: [+1, -1, -1], 2: [-1, +1, -1], 3: [+1, +1, -1],
-        4: [-1, -1, +1], 5: [+1, -1, +1], 6: [-1, +1, +1], 7: [+1, +1, +1],
+        0: [-1, -1], 1: [+1, -1], 2: [-1, +1], 3: [+1, +1],
     }
 
     def action_vector_to_index(action_vector):
         bits = [(1 if a > 0 else 0) for a in action_vector]
-        return bits[0] * 1 + bits[1] * 2 + bits[2] * 4
+        return bits[0] * 1 + bits[1] * 2
 
     # Load model
     device = "cuda" if torch.cuda.is_available() else "cpu"

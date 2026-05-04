@@ -57,7 +57,7 @@ The remaining questions are more practical than of first principles. I'll also c
 1. **What is the architecture of a dynamics model?**
 2. **How do we load data from large datasets?**
 3. **How do we train a large model the cheapest?**
-4. **What kind of collapse scenarios can exist?**
+4. **When is low loss bad?**
 5. **What if we pre-train the inverse dynamics model on annotated videos?**
 6. **How do we support continuous actions?**
 
@@ -155,15 +155,15 @@ x = self.transformer(x, conditioning=conditioning)  # None = no-op; vector = FiL
 
 This is sometimes called FiLM (Feature-wise Linear Modulation): the conditioning vector produces scale and shift parameters that modulate each block's normalized activations. The intuition is that the same token context should be processed differently depending on which action regime the sequence belongs to.
 
-Additive conditioning is per-timestep and fine-grained. Adaptive conditioning is coarse (it averages over all timesteps) but reaches deeper into the network, nudging every layer rather than just the input. In practice the additive path is enough for small models — the adaptive path is worth enabling if you see the model ignoring the action signal.
+Additive conditioning is per-timestep and fine-grained. Adaptive conditioning is coarse (it averages over all timesteps) but reaches deeper into the network, nudging every layer rather than just the input. In practice the additive path is enough for small models. The adaptive path is worth enabling if you see the model ignoring the action signal.
 
 ![Action Conditioning](../assets/3.dynamics/action_conditioning.png)
 
-For more on how the action representation itself is built — why latent codes rather than raw vectors, what FSQ quantization gives you, and how to avoid action-ignore collapse — see [article 2](../2.inverse-dynamics/README.md).
+For more on how the action representation itself is built (why latent codes rather than raw vectors, what FSQ quantization gives you, and how to avoid action-ignore collapse), see [article 2](../2.inverse-dynamics/README.md).
 
 #### Training
 
-Training is teacher-forced: the model always receives ground truth frames as input, never its own predictions. This means training is stable, but the model has never had to recover from its own mistakes — a gap that shows up as drift during long rollouts.
+Training is teacher-forced: the model always receives ground truth frames as input, never its own predictions. This means training is stable, but the model has never had to recover from its own mistakes. That gap shows up as drift during long rollouts.
 
 ```python
 def training_step(self, video_tokens, actions):
@@ -438,13 +438,15 @@ After completion, pull checkpoints from GCS:
 gsutil cp -r gs://lwm-world-model-binhpham/checkpoints/ ./checkpoints/
 ```
 
-### 4. What kind of collapse scenarios can exist?
+Another point I would like to say is utilization really matters here. If you manage to rent a H100 for 1$/hour but only use 50% of it at all time, you'll waste 0.5$/hour. Pick the compute that suits you so you can optimize your cost. In addition, there can be more optimization when it comes to using multiple GPUs at once, but that's out of scope of this article for now, it's an entire rabbit hole on its own.
 
-Collapse is when the model finds a shortcut to low loss that doesn't require learning real dynamics. And there are a few very natural ones here.
+### 4. When is low loss bad?
 
-The simplest one is copy collapse: just predict `tokens_t+1 = tokens_t`. Most consecutive frames share the majority of their tokens: backgrounds don't move, objects move slowly. A model that copies gets a surprisingly low cross-entropy for free, but it can't generate motion and doesn't care about the action at all.
+Low loss is good, but that's only if your model doesn't abuse the loss function. Collapse is when the model finds a shortcut to low loss that doesn't require learning real dynamics. In our specific case, there are a few collapse scenarios to pay attention to.
 
-Similar is frequency collapse: instead of copying the previous frame, the model learns to predict whatever token appears most often at each spatial position. Doom has huge flat regions: floors, walls, ceilings. A model can do well on average accuracy while always guessing these dominant tokens, ignoring both the frame and the action.
+The simplest one is copy collapse: the model just predicts `tokens_t+1 = tokens_t`. Most consecutive frames share the majority of their tokens: backgrounds don't move, objects move slowly. A model that copies gets a surprisingly low cross-entropy for free, but it can't generate motion and doesn't care about the action at all.
+
+Similar is frequency collapse: instead of copying the previous frame, the model learns to predict whatever token appears most often at each spatial position. Some datasets have huge flat regions: floors, walls, ceilings. A model can do well on average accuracy while always guessing these dominant tokens, ignoring both the frame and the action.
 
 The scariest one is action-ignoring collapse. The model learns genuine visual dynamics, predicts plausible next frames from token context, but does this without touching the action conditioning at all. The loss looks fine. The reconstructions look fine. But give it the same starting frame with two different actions, and it produces the same future both times. You can only catch this during validation by sweeping actions and checking whether futures diverge. Notice that the current validate.py only checks cross-entropy loss:
 
@@ -460,6 +462,32 @@ def validate(model, dataloader, device) -> float:
 ```
 
 This tells you nothing about whether different actions produce different futures. You'd need to add a rollout sweep: fix a starting frame, run `rollout()` with every possible action id, and measure the variance across the resulting token sequences.
+
+There is also a subtler failure that lives one stage earlier in the video tokenizer: codebook collapse. The tokenizer maps every patch to one of 512 discrete tokens, but nothing forces it to use all of them. If the dataset is visually repetitive, think the same wall textures and floor tiles, the model can achieve low reconstruction loss while only using a small fraction of the vocabulary. The dynamics model then trains on that sparse token distribution, which makes its prediction problem easy and limits how much the world model can actually express. The fix is entropy regularization on the tokenizer. You add a term to the training loss that penalizes concentrated codebook usage and pushes the model toward a more uniform distribution over codes within each batch.
+
+```python
+# From video_tokenizer/models/video_tokenizer.py
+def _codebook_entropy_loss(self, z: torch.Tensor) -> torch.Tensor:
+    num_bins = self.encoder.num_bins
+
+    z_flat = z.reshape(-1, z.shape[-1])
+    z_bounded = torch.tanh(z_flat)
+    z_scaled = (z_bounded + 1) / 2 * (num_bins - 1)
+
+    # Soft assignment: distance to each bin center
+    bin_centers = torch.arange(num_bins, device=z.device, dtype=z.dtype)
+    distances = (z_scaled.unsqueeze(-1) - bin_centers) ** 2
+    probs = F.softmax(-distances / 0.1, dim=-1)
+
+    # Average over batch to get marginal per-dimension distribution
+    avg_probs = probs.mean(dim=0)
+
+    # Normalized per-dimension entropy, negated so minimizing it maximizes entropy
+    entropy = -(avg_probs * torch.log(avg_probs + 1e-10)).sum(dim=-1)
+    return -entropy.mean() / math.log(num_bins)
+```
+
+The key idea is that instead of looking at hard token counts (which have no gradient), we compute a soft probability over bin centers for each latent dimension. We then average that distribution across the batch and measure its entropy. When the model collapses to a few codes, this entropy is low and the loss goes up. When codes are spread evenly, entropy is maximized and the term contributes nothing.
 
 The last one is more of a code bug than a training failure: causal leakage. If the temporal attention mask isn't strictly upper triangular, patches at frame `t` can attend to frames `t+1` or later. The model trivially predicts the future by looking at it, loss drops to near-zero immediately, and you think you've built a great model. The fix is always enforcing `causal_temporal=True` in the transformer constructor:
 
@@ -477,11 +505,7 @@ self.transformer = SpatioTemporalTransformer(
 
 ![Causal Attention](../assets/3.dynamics/causal_attention.png)
 
-The common thread: cross-entropy loss going down does not mean the model learned real dynamics. The real test is whether different actions produce different futures.
-
 ### 5. What if we pre-train the inverse dynamics model on annotated videos?
-
-The core idea is semi-supervised training: use a small annotated dataset to give the action space meaning, then scale on unlabeled video.
 
 The inverse dynamics model we built discovers actions purely from reconstruction loss. The actions it finds work, but they're anonymous. Action 3 might be "strafe left," but nothing forced it to be. If you have even a small set of annotated clips, say Doom recordings with controller inputs logged, you can pre-train the encoder supervised before switching to the unsupervised reconstruction objective.
 
@@ -506,7 +530,7 @@ Now `inverse_model.encode` is producing latent codes that already have semantic 
 
 The limitation is domain transfer. If your annotated clips are close to your unlabeled footage, the pre-trained semantics survive fine-tuning. If they're not, the fine-tuning on unlabeled data will drift the encoder away from the annotated semantics anyway. Semi-supervised only helps if the two datasets share enough structure.
 
-This is exactly what OpenAI did with [VPT (Video Pre-Training)](https://github.com/openai/Video-Pre-Training). They hired contractors to play Minecraft while logging controller inputs, trained an inverse dynamics model on that small annotated set, then used it to pseudo-label 70,000 hours of unlabeled Minecraft footage from the internet. The resulting action labels were good enough to train a behavioral cloning policy that learned to craft diamond tools — a task that requires hundreds of sequential steps and had never been solved from video alone. The key insight is that you don't need annotations at scale; you only need enough to anchor the inverse dynamics model's latent space to something semantically meaningful.
+This is exactly what OpenAI did with [VPT (Video Pre-Training)](https://github.com/openai/Video-Pre-Training). They hired contractors to play Minecraft while logging controller inputs, trained an inverse dynamics model on that small annotated set, then used it to pseudo-label 70,000 hours of unlabeled Minecraft footage from the internet. The resulting action labels were good enough to train a behavioral cloning policy that learned to craft diamond tools, a task that requires hundreds of sequential steps and had never been solved from video alone. The key insight is that you don't need annotations at scale; you only need enough to anchor the inverse dynamics model's latent space to something semantically meaningful.
 
 ### 6. How do we support continuous actions?
 
@@ -590,14 +614,13 @@ gsutil cp -r gs://lwm-world-model-binhpham/checkpoints/ ./checkpoints/
 ```
 3.dynamics/
 ├── README.md
-├── .visualize_pipeline.py
 ├── config.py
 ├── train.py
 ├── validate.py
+├── pyproject.toml
 ├── checkpoints/
 ├── data/
-│   ├── download_doom.sh
-│   └── .cache/
+│   └── generate_doom.py
 ├── skypilot/
 │   ├── train.yaml
 │   ├── validate.yaml
@@ -609,6 +632,46 @@ gsutil cp -r gs://lwm-world-model-binhpham/checkpoints/ ./checkpoints/
         ├── __init__.py
         └── dynamics_model.py
 ```
+
+## Run Log
+
+### The dataset
+
+Article 2 used real Doom footage from the [Doom Gameplay Dataset](https://github.com/thavlik/doom-gameplay-dataset). That dataset is gone: the author deleted the bucket. So I generate my own with [VizDoom](https://vizdoom.cs.put.edu.pl). VizDoom is a Python wrapper around Doom's engine. You write a bot, it plays the game, you record both the screen and the exact buttons pressed. You get ground-truth action labels for free.
+
+It's also self-contained. The open-source `freedoom2.wad` is bundled with the vizdoom package, no external downloads. The generation script installs in a single `pip install vizdoom` and produces `N` videos in one pass.
+
+#### How I generate
+
+The script is at [`2.inverse-dynamics/data/generate_doom.py`](../2.inverse-dynamics/data/generate_doom.py). It runs 4 bot personalities across 6 Doom scenarios:
+
+| Personality | Behavior                                                    |
+| ----------- | ----------------------------------------------------------- |
+| Explorer    | Moves forward continuously, turns occasionally              |
+| Fighter     | Cycles between strafing, shooting, and turning aggressively |
+| Wanderer    | Picks a random action combo and holds it for 1-2 seconds    |
+| Rusher      | Alternates between sprinting forward and snapping turns     |
+
+| Scenario          | Character                                 |
+| ----------------- | ----------------------------------------- |
+| deadly_corridor   | Linear corridor with enemies              |
+| my_way_home       | Maze navigation                           |
+| defend_the_center | Arena, enemies spawn and rush in          |
+| health_gathering  | Open map, collect health packs to survive |
+| defend_the_line   | Fixed position, enemies approach in waves |
+| deathmatch        | Open map, free-roam combat                |
+
+For each video, I randomly sample one scenario and one personality. 100 videos at 60 seconds each at 15fps gives 90,000 frames, or about 22,500 training clips at 4 frames per clip.
+
+#### What I observed
+
+After training the video tokenizer to epoch 20, codebook utilization was only 117 out of 1024 tokens. The loss was fine (0.0014), but most of the codebook was idle.
+
+Looking at the generated videos, the agent stays still a lot. The Wanderer holds the same action for 10-30 frames at a time, and if that action doesn't move the player (say, just shooting while facing a wall), you get a long run of identical frames. The other agents had the same problem: nobody checks whether they're actually moving.
+
+Doom's visual field makes this worse. At any moment the screen is mostly ceiling, floor, and a wall texture, with the same gun sprite at the bottom. There are maybe 10-20 visually distinct patch types in the whole dataset. 117 codes is close to what you'd expect.
+
+The fix is stuck detection: compare each frame to the previous one, and if pixel-wise mean difference is below a threshold, force a turn. Added to the base `Agent` class in `generate_doom.py`, all four personalities get it automatically. Next dataset generation run will use it.
 
 ## What's Next?
 

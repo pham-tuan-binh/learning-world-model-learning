@@ -60,12 +60,12 @@ In video games, actions are controller inputs: move left, jump, shoot. These can
 
 The insight is to use **latent actions**. We don't define what actions mean; we let the model learn them. The model outputs a vector, and we discretize it into a finite vocabulary of actions using FSQ (Finite Scalar Quantization) from folder 1.
 
-For example, with `action_dim=3` dimensions and binary quantization (2 bins per dimension):
+For example, with `action_dim=2` dimensions and binary quantization (2 bins per dimension):
 
-- `2³ = 8` possible discrete actions
-- Action `[0, 0, 0]` maps to action 0 (the model learns this might mean "stay still")
-- Action `[1, 0, 1]` maps to action 5 (the model learns this might mean "move forward")
-- Action `[1, 1, 1]` maps to action 7 (the model learns this might mean "turn right")
+- `2² = 4` possible discrete actions
+- Action `[0, 0]` maps to action 0 (the model learns this might mean "stay still")
+- Action `[1, 0]` maps to action 2 (the model learns this might mean "move forward")
+- Action `[1, 1]` maps to action 3 (the model learns this might mean "turn right")
 
 We don't define the semantics. They emerge from training.
 
@@ -75,21 +75,21 @@ From [inverse_dynamics/models/latent_action_model.py](inverse_dynamics/models/la
 class LatentActionModel(nn.Module):
     NUM_LATENT_ACTIONS_BINS = 2  # Binary quantization: {0, 1}
 
-    def __init__(self, n_actions: int = 8, ...):
+    def __init__(self, n_actions: int = 4, ...):
         # n_actions must be power of 2: n_actions = 2^action_dim
-        # For n_actions=8: action_dim = log2(8) = 3
+        # For n_actions=4: action_dim = log2(4) = 2
         self.action_dim = int(math.log(n_actions, self.NUM_LATENT_ACTIONS_BINS))
 
         # Quantizer discretizes continuous action vectors to finite vocabulary
-        # Input: (B, T-1, 3) continuous values
-        # Output: (B, T-1, 3) values in {0, 1}, representing 8 discrete actions
+        # Input: (B, T-1, 2) continuous values
+        # Output: (B, T-1, 2) values in {0, 1}, representing 4 discrete actions
         self.quantizer = FiniteScalarQuantizer(
-            latent_dim=self.action_dim,    # 3 dimensions
+            latent_dim=self.action_dim,    # 2 dimensions
             num_bins=self.NUM_LATENT_ACTIONS_BINS,  # Binary: 2 bins
         )
 ```
 
-Why binary quantization? It's the simplest form: each dimension is either 0 or 1. With 3 dimensions, we get 8 actions. Want more actions? Increase `action_dim`: with 4 dimensions, `2⁴ = 16` actions.
+Why binary quantization? It's the simplest form: each dimension is either 0 or 1. With 2 dimensions, we get 4 actions, enough to cover the main doom inputs (move forward, turn left, turn right, shoot). Want more actions? Increase `action_dim`: with 3 dimensions, `2³ = 8` actions.
 
 ![Action Quantization](../assets/2.inverse-dynamics/action_quantization.png)
 
@@ -183,7 +183,7 @@ class LatentActionModel(nn.Module):
         action_latents = self.encoder(frames)  # (B, T-1, A)
 
         # 2. Quantize to discrete actions (with straight-through gradient)
-        action_latents_quantized, _ = self.quantizer(action_latents)
+        action_latents_quantized, action_indices = self.quantizer(action_latents)
 
         # 3. Predict next frames using inferred actions
         pred_frames = self.decoder(frames, action_latents_quantized, training=True)
@@ -192,7 +192,12 @@ class LatentActionModel(nn.Module):
         target_frames = frames[:, 1:]  # Ground truth: frames 2 to T
         recon_loss = F.smooth_l1_loss(pred_frames, target_frames)
 
-        return recon_loss, pred_frames
+        # 5. Variance penalty to prevent collapse
+        z_var = action_latents.var(dim=0, unbiased=False).mean()
+        var_penalty = F.relu(self.var_target - z_var)
+        total_loss = recon_loss + self.var_lambda * var_penalty
+
+        return total_loss, pred_frames, action_indices
 ```
 
 We never need ground truth actions. The model learns to infer actions that are **useful for prediction**. Actions that don't help prediction get zero gradient and are not learned.
@@ -252,7 +257,9 @@ var_penalty = F.relu(self.var_target - z_var)  # Penalize if below target
 total_loss = recon_loss + self.var_lambda * var_penalty
 ```
 
-If the variance of actions drops below a target threshold, the penalty kicks in, pushing the model to produce diverse actions.
+If the variance of action latents drops below the target, the penalty kicks in, pushing the model to produce more spread-out outputs.
+
+The key calibration: in a binary `{-1, +1}` space, a 50/50 split has variance 1.0. Even a heavily skewed 80/20 split has variance ~0.64. We set `var_target=0.5` so the penalty only fires when the distribution is genuinely degenerate (near-total collapse), and `var_lambda=0.005` so the maximum penalty (`0.005 * 0.5 = 0.0025`) stays below the typical reconstruction loss of `~0.003`.
 
 ![Variance Penalty](../assets/2.inverse-dynamics/variance_penalty.png)
 
@@ -397,8 +404,8 @@ Training: minimize reconstruction loss + variance penalty
 | P         | Patch size                 | 8       |
 | N         | Patches per frame = (H/P)² | 256     |
 | E         | Embedding dimension        | 128     |
-| A         | Action dimension           | 3       |
-| n_actions | Discrete vocabulary = 2^A  | 8       |
+| A         | Action dimension           | 2       |
+| n_actions | Discrete vocabulary = 2^A  | 4       |
 
 ## Usage
 
@@ -456,7 +463,7 @@ uv run ./2.inverse-dynamics/debug/infer_actions.py \
 
 ### Interactive World Model Player
 
-Play the world model interactively by pressing keys 1-8 to select actions:
+Play the world model interactively by pressing keys 1-4 to select actions:
 
 ```bash
 # Start with first frame of a video
@@ -481,8 +488,8 @@ uv run ./2.inverse-dynamics/debug/play.py \
 During training:
 
 - **Loss should decrease**: if not, learning rate might be wrong
-- **Action variance should stay above target**: if it collapses to 0, increase `var_lambda`
-- **Unique actions used**: ideally all `n_actions` get used over time
+- **Actions: N/4 should not stay at 1/4**: if only one code is used across multiple epochs, that is collapse. But 2/4 or 3/4 is legitimate if the dataset is skewed (e.g., the player mostly moves forward). Do not expect 4/4 equal distribution from skewed gameplay data
+- **Action variance should stay above target**: if `var_penalty` dominates the loss repeatedly, the model is struggling to diversify. Check `var_lambda` calibration
 
 During validation:
 
@@ -632,7 +639,7 @@ Why does this matter?
 
 ### The inverse dynamics decoder is a training signal, not a world model
 
-The inverse dynamics decoder exists to provide gradients for training the action encoder. It asks: "if these inferred actions are correct, can we predict the next frame?" The answer doesn't need to be pixel-perfect—it just needs to be good enough to guide action learning.
+The inverse dynamics decoder exists to provide gradients for training the action encoder. It asks: "if these inferred actions are correct, can we predict the next frame?" The answer does not need to be pixel-perfect. It just needs to be good enough to guide action learning.
 
 A world model needs to generate coherent, high-quality video over many timesteps. This requires:
 

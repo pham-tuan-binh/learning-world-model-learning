@@ -58,11 +58,30 @@ SCENARIOS = [
 # ---------------------------------------------------------------------------
 
 class Agent:
-    """Base class — subclasses override `act`."""
+    """Base class — subclasses override `_act`. Stuck detection runs automatically."""
     def __init__(self, num_buttons: int):
         self.num_buttons = num_buttons
+        self._prev_screen = None
+        self._stuck_count = 0
+        self._stuck_turn = random.choice([0, 1])
 
     def act(self, state) -> list[bool]:
+        action = self._act(state)
+        # If the frame hasn't changed, we're stuck in a wall — force a turn
+        if self._prev_screen is not None:
+            diff = np.abs(state.screen_buffer.astype(np.float32) - self._prev_screen).mean()
+            if diff < 2.0:
+                self._stuck_count += 1
+                if self._stuck_count > 3:
+                    action = self._zeros()
+                    action[self._stuck_turn] = True
+            else:
+                self._stuck_count = 0
+                self._stuck_turn = random.choice([0, 1])
+        self._prev_screen = state.screen_buffer.astype(np.float32)
+        return action
+
+    def _act(self, state) -> list[bool]:
         raise NotImplementedError
 
     def _zeros(self) -> list[bool]:
@@ -77,7 +96,7 @@ class ExplorerAgent(Agent):
         self._turn_dir = random.choice([-1, 1])
         self._turn_duration = 0
 
-    def act(self, state) -> list[bool]:
+    def _act(self, state) -> list[bool]:
         a = self._zeros()
         self._steps += 1
 
@@ -107,7 +126,7 @@ class FighterAgent(Agent):
         self._phase = 0
         self._phase_len = random.randint(8, 20)
 
-    def act(self, state) -> list[bool]:
+    def _act(self, state) -> list[bool]:
         a = self._zeros()
         self._phase += 1
 
@@ -145,7 +164,7 @@ class WandererAgent(Agent):
         self._action = self._zeros()
         self._hold = 0
 
-    def act(self, state) -> list[bool]:
+    def _act(self, state) -> list[bool]:
         if self._hold <= 0:
             self._action = self._zeros()
             btns = random.sample(range(self.num_buttons), k=min(2, self.num_buttons))
@@ -169,7 +188,7 @@ class RusherAgent(Agent):
         self._countdown = 0
         self._current = self._zeros()
 
-    def act(self, state) -> list[bool]:
+    def _act(self, state) -> list[bool]:
         if self._countdown <= 0:
             self._current = self._zeros()
             r = random.random()

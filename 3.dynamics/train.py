@@ -98,14 +98,22 @@ def train_epoch(
             param_group["lr"] = lr
 
         if global_step % config.training.log_interval == 0:
+            avg_loss = total_loss / num_batches
             now = time.time()
-            steps_per_sec = (global_step - last_log_step) / max(now - last_log_time, 1e-6)
+            steps_since_log = global_step - last_log_step
+            time_per_interval = now - last_log_time
+            steps_per_sec = steps_since_log / time_per_interval if time_per_interval > 0 else 0
+
+            remaining_steps = total_steps - global_step
+            eta_seconds = remaining_steps / steps_per_sec if steps_per_sec > 0 else 0
+            eta_str = f"{eta_seconds/3600:.1f}h" if eta_seconds >= 3600 else f"{eta_seconds/60:.1f}m"
+
             print(
                 f"  Step {global_step}/{total_steps} | "
                 f"Loss: {loss.item():.4f} | "
-                f"Avg: {total_loss / num_batches:.4f} | "
+                f"Avg: {avg_loss:.4f} | "
                 f"LR: {lr:.6f} | "
-                f"{steps_per_sec:.2f} steps/s"
+                f"ETA: {eta_str}"
             )
             last_log_time = now
             last_log_step = global_step
@@ -184,6 +192,8 @@ def main():
     parser.add_argument("--embed-dim", type=int, default=128)
     parser.add_argument("--num-heads", type=int, default=8)
     parser.add_argument("--num-blocks", type=int, default=4)
+    parser.add_argument("--frame-size", type=int, default=128)
+    parser.add_argument("--patch-size", type=int, default=8)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--checkpoint-dir", type=str, default="3.dynamics/checkpoints")
@@ -195,6 +205,8 @@ def main():
         model_embed_dim=args.embed_dim,
         model_num_heads=args.num_heads,
         model_num_blocks=args.num_blocks,
+        model_frame_size=args.frame_size,
+        model_patch_size=args.patch_size,
         training_num_epochs=args.num_epochs,
         training_batch_size=args.batch_size,
         training_learning_rate=args.learning_rate,
@@ -273,8 +285,15 @@ def main():
         start_epoch, global_step, _ = load_checkpoint(args.resume, model, optimizer)
         start_epoch += 1  # start from next epoch
 
+    print("\n" + "=" * 60)
+    print("Starting training...")
+    print("=" * 60)
+
+    checkpoint_dir = Path(config.checkpoint_dir)
     for epoch in range(start_epoch, config.training.num_epochs):
+        epoch_start = time.time()
         print(f"\nEpoch {epoch + 1}/{config.training.num_epochs}")
+        print("-" * 40)
         train_loss, global_step = train_epoch(
             model,
             train_loader,
@@ -285,22 +304,27 @@ def main():
             global_step,
         )
         val_loss = validate(model, val_loader, config)
-        print(f"  Train loss: {train_loss:.4f} | Val loss: {val_loss:.4f}")
+        epoch_time = time.time() - epoch_start
+        print(f"  Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Time: {epoch_time:.1f}s")
 
-        checkpoint_path = Path(config.checkpoint_dir) / f"checkpoint_epoch{epoch + 1}.pt"
-        save_checkpoint(model, optimizer, epoch, global_step, val_loss, config, checkpoint_path)
+        if (epoch + 1) % 10 == 0 or val_loss < best_val_loss:
+            save_checkpoint(model, optimizer, epoch, global_step, val_loss, config,
+                            checkpoint_dir / f"checkpoint_epoch{epoch + 1}.pt")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            save_checkpoint(
-                model,
-                optimizer,
-                epoch,
-                global_step,
-                val_loss,
-                config,
-                Path(config.checkpoint_dir) / "best_model.pt",
-            )
+            save_checkpoint(model, optimizer, epoch, global_step, val_loss, config,
+                            checkpoint_dir / "best_model.pt")
+            print("  New best model!")
+
+    save_checkpoint(model, optimizer, config.training.num_epochs - 1, global_step, val_loss, config,
+                    checkpoint_dir / "final_model.pt")
+
+    print("\n" + "=" * 60)
+    print("Training complete!")
+    print(f"Best validation loss: {best_val_loss:.4f}")
+    print(f"Checkpoints saved to: {checkpoint_dir}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

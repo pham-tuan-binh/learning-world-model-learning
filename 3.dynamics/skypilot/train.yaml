@@ -21,17 +21,18 @@ resources:
   image_id: docker:nvcr.io/nvidia/pytorch:25.03-py3
   ordered:
     - infra: gcp
+      accelerators: H100:1
+    - infra: nebius
+      accelerators: H100:1
+    - infra: gcp
       accelerators: A100-80GB:1
-    - infra: gcp
-      accelerators: A100:1
-    - infra: gcp
-      accelerators: L4:1
 
 envs:
   EMBED_DIM: "256"
   NUM_BLOCKS: "6"
   NUM_WORKERS: "8"
-  BATCH_SIZE: "32"
+  BATCH_SIZE: "16"
+  PATCH_SIZE: "4"
 
 setup: |
   set -e
@@ -90,7 +91,9 @@ run: |
       --num-blocks "$NUM_BLOCKS" \
       --num-workers "$NUM_WORKERS" \
       --batch-size "$BATCH_SIZE" \
-      --num-epochs 25 \
+      --patch-size "$PATCH_SIZE" \
+      --num-epochs 15 \
+      --entropy-weight 0.01 \
       "${RESUME_ARGS[@]}"
   fi
 
@@ -109,7 +112,9 @@ run: |
       --num-blocks "$NUM_BLOCKS" \
       --num-workers "$NUM_WORKERS" \
       --batch-size "$BATCH_SIZE" \
-      --num-epochs 20 \
+      --patch-size "$PATCH_SIZE" \
+      --n-actions 4 \
+      --num-epochs 15 \
       "${RESUME_ARGS[@]}"
   fi
 
@@ -130,7 +135,8 @@ run: |
       --num-blocks "$NUM_BLOCKS" \
       --num-workers "$NUM_WORKERS" \
       --batch-size "$BATCH_SIZE" \
-      --num-epochs 50 \
+      --patch-size "$PATCH_SIZE" \
+      --num-epochs 15 \
       "${RESUME_ARGS[@]}"
   fi
 

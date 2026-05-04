@@ -25,16 +25,12 @@ except ImportError:
 from inverse_dynamics import LatentActionModel
 
 
-# Action index to vector mapping (0-7 -> [-1/+1, -1/+1, -1/+1])
+# Action index to vector mapping (0-3 -> [-1/+1, -1/+1])
 ACTION_VECTORS = {
-    0: [-1, -1, -1],
-    1: [+1, -1, -1],
-    2: [-1, +1, -1],
-    3: [+1, +1, -1],
-    4: [-1, -1, +1],
-    5: [+1, -1, +1],
-    6: [-1, +1, +1],
-    7: [+1, +1, +1],
+    0: [-1, -1],
+    1: [+1, -1],
+    2: [-1, +1],
+    3: [+1, +1],
 }
 
 
@@ -103,9 +99,9 @@ def load_video_frames(video_path: str, frame_size: int, max_frames: int = None, 
 
 
 def action_vector_to_index(action_vector) -> int:
-    """Convert action vector to index (0-7)."""
+    """Convert action vector to index (0-3)."""
     bits = [(1 if a > 0 else 0) for a in action_vector]
-    return bits[0] * 1 + bits[1] * 2 + bits[2] * 4
+    return bits[0] * 1 + bits[1] * 2
 
 
 def infer_actions(model, frames: torch.Tensor, device: str, chunk_size: int = 16) -> list:
@@ -174,7 +170,7 @@ def print_action_summary(actions: list):
         print(f"  Action {idx + 1} {str(ACTION_VECTORS[idx]):>15}: {count:4d} ({pct:5.1f}%) {bar}")
 
     unique_actions = len(action_counts)
-    print(f"\nUnique actions used: {unique_actions} / 8")
+    print(f"\nUnique actions used: {unique_actions} / 4")
 
     print(f"\n{'='*60}")
     print("COMPACT SEQUENCE")

@@ -83,7 +83,7 @@ def train_epoch(
 
         # Forward pass with mixed precision (only on CUDA)
         with autocast(device_type=device_type, enabled=use_amp):
-            loss, x_hat, indices = model(x)
+            loss, x_hat, indices, recon_loss = model(x, entropy_weight=config.training.entropy_weight)
 
         # Backward pass
         optimizer.zero_grad()
@@ -193,9 +193,9 @@ def validate(
             x = batch.to(device)
 
             with autocast(device_type=device_type, enabled=use_amp):
-                loss, _, _ = model(x)
+                _, _, _, recon_loss = model(x)
 
-            total_loss += loss.item()
+            total_loss += recon_loss.item()
             num_batches += 1
 
     avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
@@ -279,6 +279,8 @@ def main():
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints")
     parser.add_argument("--resume", type=str, help="Path to checkpoint to resume from")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--entropy-weight", type=float, default=0.1,
+                        help="Weight for codebook entropy regularization (0 to disable)")
 
     args = parser.parse_args()
 
@@ -298,6 +300,7 @@ def main():
         training_batch_size=args.batch_size,
         training_learning_rate=args.learning_rate,
         training_num_epochs=args.num_epochs,
+        training_entropy_weight=args.entropy_weight,
     )
 
     # Setup data

@@ -63,7 +63,7 @@ class LatentActionsEncoder(nn.Module):
         embed_dim: int = 128,
         num_heads: int = 8,
         num_blocks: int = 4,
-        action_dim: int = 3,
+        action_dim: int = 2,
     ):
         super().__init__()
 
@@ -176,7 +176,7 @@ class LatentActionsDecoder(nn.Module):
         embed_dim: int = 128,
         num_heads: int = 8,
         num_blocks: int = 4,
-        action_dim: int = 3,
+        action_dim: int = 2,
         use_adaptive_conditioning: bool = True,
     ):
         super().__init__()
@@ -330,7 +330,7 @@ class LatentActionModel(nn.Module):
     def __init__(
         self,
         frame_size: int = 128,
-        n_actions: int = 8,
+        n_actions: int = 4,
         patch_size: int = 8,
         embed_dim: int = 128,
         num_heads: int = 8,
@@ -375,10 +375,10 @@ class LatentActionModel(nn.Module):
         )
 
         # Variance regularization (prevents action collapse)
-        self.var_target = 0.01
-        self.var_lambda = 100.0
+        self.var_target = 0.5   # binary {-1,+1} with 50/50 split has var=1.0; fires when near-degenerate
+        self.var_lambda = 0.005  # max penalty = 0.005 * 0.5 = 0.0025, below typical recon ~0.003
 
-    def forward(self, frames: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, frames: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass: infer actions and predict next frames.
 
@@ -386,29 +386,22 @@ class LatentActionModel(nn.Module):
             frames: Video frames, shape (B, T, C, H, W)
 
         Returns:
-            total_loss: Combined reconstruction + variance loss
+            total_loss: Reconstruction loss + variance penalty
             pred_frames: Predicted next frames, shape (B, T-1, C, H, W)
+            action_indices: Discrete action codes, shape (B, T-1)
         """
-        # Infer continuous action latents
         action_latents = self.encoder(frames)  # (B, T-1, A)
-
-        # Quantize to discrete actions
-        action_latents_quantized, _ = self.quantizer(action_latents)
-
-        # Predict next frames
+        action_latents_quantized, action_indices = self.quantizer(action_latents)
         pred_frames = self.decoder(frames, action_latents_quantized, training=True)
 
-        # Reconstruction loss
         target_frames = frames[:, 1:]
         recon_loss = F.smooth_l1_loss(pred_frames, target_frames)
 
-        # Variance loss (prevent collapse)
         z_var = action_latents.var(dim=0, unbiased=False).mean()
         var_penalty = F.relu(self.var_target - z_var)
-
         total_loss = recon_loss + self.var_lambda * var_penalty
 
-        return total_loss, pred_frames
+        return total_loss, pred_frames, action_indices
 
     def encode(self, frames: torch.Tensor) -> torch.Tensor:
         """Encode frames to discrete actions."""
@@ -426,7 +419,7 @@ if __name__ == "__main__":
 
     model = LatentActionModel(
         frame_size=128,
-        n_actions=8,
+        n_actions=4,
         patch_size=8,
         embed_dim=128,
         num_heads=8,
@@ -440,9 +433,10 @@ if __name__ == "__main__":
     print(f"Parameters: {num_params:,}")
 
     frames = torch.randn(2, 4, 3, 128, 128)
-    loss, pred = model(frames)
+    loss, pred, indices = model(frames)
     print(f"\nInput: {frames.shape}")
     print(f"Loss: {loss.item():.4f}")
     print(f"Predicted: {pred.shape}")
+    print(f"Action indices: {indices.shape}")
 
     print("\nAll tests passed!")
