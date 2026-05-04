@@ -50,6 +50,7 @@ def train_epoch(
     total_loss = 0.0
     num_batches = 0
 
+    all_action_indices = []
     last_log_time = time.time()
     last_log_step = global_step
     steps_per_epoch = len(dataloader)
@@ -62,7 +63,7 @@ def train_epoch(
         x = batch.to(device)
 
         with autocast(device_type=device_type, enabled=use_amp):
-            loss, pred_frames = model(x)
+            loss, pred_frames, action_indices = model(x)
 
         optimizer.zero_grad()
         scaler.scale(loss).backward()
@@ -78,6 +79,7 @@ def train_epoch(
 
         total_loss += loss.item()
         num_batches += 1
+        all_action_indices.append(action_indices.detach().cpu())
         global_step += 1
 
         # Learning rate schedule
@@ -115,7 +117,10 @@ def train_epoch(
             last_log_step = global_step
 
     avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
-    return avg_loss, global_step
+    all_action_indices = torch.cat(all_action_indices, dim=0).flatten()
+    action_usage = torch.bincount(all_action_indices, minlength=config.model.n_actions)
+    num_used = (action_usage > 0).sum().item()
+    return avg_loss, global_step, (num_used, config.model.n_actions)
 
 
 def validate(model: nn.Module, dataloader: DataLoader, config: Config) -> float:
@@ -133,7 +138,7 @@ def validate(model: nn.Module, dataloader: DataLoader, config: Config) -> float:
         for batch in dataloader:
             x = batch.to(device)
             with autocast(device_type=device_type, enabled=use_amp):
-                loss, _ = model(x)
+                loss, _, _ = model(x)
             total_loss += loss.item()
             num_batches += 1
 
@@ -178,7 +183,7 @@ def main():
     parser.add_argument("--embed-dim", type=int, default=128)
     parser.add_argument("--num-heads", type=int, default=8)
     parser.add_argument("--num-blocks", type=int, default=4)
-    parser.add_argument("--n-actions", type=int, default=8)
+    parser.add_argument("--n-actions", type=int, default=4)
     parser.add_argument("--no-adaptive-conditioning", action="store_true",
                        help="Disable adaptive layer norm conditioning")
 
@@ -309,14 +314,15 @@ def main():
         print(f"\nEpoch {epoch + 1}/{config.training.num_epochs}")
         print("-" * 40)
 
-        train_loss, global_step = train_epoch(
+        train_loss, global_step, action_usage = train_epoch(
             model, train_loader, optimizer, scaler, config, epoch, global_step
         )
 
         val_loss = validate(model, val_loader, config)
 
         epoch_time = time.time() - epoch_start
-        print(f"  Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Time: {epoch_time:.1f}s")
+        used, total = action_usage
+        print(f"  Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Actions: {used}/{total} | Time: {epoch_time:.1f}s")
 
         if (epoch + 1) % 10 == 0 or val_loss < best_val_loss:
             save_checkpoint(model, optimizer, epoch, global_step, val_loss, config,

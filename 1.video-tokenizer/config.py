@@ -43,9 +43,9 @@ class ModelConfig:
     num_blocks: int = 4           # Number of transformer blocks
 
     # Quantization (FSQ)
-    latent_dim: int = 5           # D - dimensions in latent space
-    num_bins: int = 4             # L - quantization levels per dimension
-    # codebook_size = L^D = 4^5 = 1024 tokens
+    latent_dim: int = 3           # D - dimensions in latent space
+    num_bins: int = 8             # L - quantization levels per dimension
+    # codebook_size = L^D = 8^3 = 512 tokens
 
     # Regularization
     dropout: float = 0.0          # Dropout probability (0 = no dropout)
@@ -92,6 +92,7 @@ class TrainingConfig:
 
     # Regularization
     max_grad_norm: float = 1.0        # Gradient clipping threshold
+    entropy_weight: float = 0.01      # Weight for codebook entropy regularization
 
     # Logging and checkpointing
     log_interval: int = 100           # Log every N steps

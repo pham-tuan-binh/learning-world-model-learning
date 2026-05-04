@@ -44,8 +44,8 @@ class DummyTokenDynamicsDataset(Dataset):
         num_samples: int = 1000,
         num_frames: int = 4,
         num_patches: int = 256,
-        vocab_size: int = 1024,
-        action_dim: int = 3,
+        vocab_size: int = 512,
+        action_dim: int = 2,
     ):
         self.num_samples = num_samples
         self.num_frames = num_frames
@@ -119,7 +119,7 @@ class TokenDynamicsDataset(Dataset):
         num_frames: int = 4,
         frame_size: int = 128,
         num_patches: int = 256,
-        action_dim: int = 3,
+        action_dim: int = 2,
         frame_skip: int = 1,
         cache_dir: Optional[str] = None,
         refresh_cache: bool = False,
@@ -319,8 +319,8 @@ class TokenDynamicsDataset(Dataset):
             embed_dim=getattr(model_config, "embed_dim", 128),
             num_heads=getattr(model_config, "num_heads", 8),
             num_blocks=getattr(model_config, "num_blocks", 4),
-            latent_dim=getattr(model_config, "latent_dim", 5),
-            num_bins=getattr(model_config, "num_bins", 4),
+            latent_dim=getattr(model_config, "latent_dim", 3),
+            num_bins=getattr(model_config, "num_bins", 8),
             dropout=0.0,
         )
         model.load_state_dict(checkpoint["model_state_dict"])
@@ -336,7 +336,7 @@ class TokenDynamicsDataset(Dataset):
 
         model = LatentActionModel(
             frame_size=getattr(model_config, "frame_size", self.frame_size),
-            n_actions=getattr(model_config, "n_actions", 8),
+            n_actions=getattr(model_config, "n_actions", 4),
             patch_size=getattr(model_config, "patch_size", 8),
             embed_dim=getattr(model_config, "embed_dim", 128),
             num_heads=getattr(model_config, "num_heads", 8),
@@ -395,8 +395,8 @@ def get_dataloader(
     num_frames: int = 4,
     frame_size: int = 128,
     num_patches: int = 256,
-    vocab_size: int = 1024,
-    action_dim: int = 3,
+    vocab_size: int = 512,
+    action_dim: int = 2,
     frame_skip: int = 1,
     num_workers: int = 4,
     pin_memory: bool = True,

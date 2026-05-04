@@ -30,11 +30,11 @@ class ModelConfig:
     patch_size: int = 8
 
     # Tokenizer vocabulary
-    latent_dim: int = 5
-    num_bins: int = 4
+    latent_dim: int = 3
+    num_bins: int = 8
 
     # Latent action space
-    n_actions: int = 8
+    n_actions: int = 4
 
     # Transformer
     embed_dim: int = 128

@@ -83,8 +83,8 @@ run: |
       embed_dim=g("embed_dim", 128),
       num_heads=g("num_heads", 8),
       num_blocks=g("num_blocks", 4),
-      latent_dim=g("latent_dim", 5),
-      num_bins=g("num_bins", 4),
+      latent_dim=g("latent_dim", 3),
+      num_bins=g("num_bins", 8),
   )
   tokenizer.load_state_dict(ckpt["model_state_dict"])
   tokenizer.eval()
@@ -92,7 +92,7 @@ run: |
   ckpt, g = load_checkpoint(f"{SMOKE_DIR}/inverse/best_model.pt")
   inverse = LatentActionModel(
       frame_size=g("frame_size", 128),
-      n_actions=g("n_actions", 8),
+      n_actions=g("n_actions", 4),
       patch_size=g("patch_size", 8),
       embed_dim=g("embed_dim", 128),
       num_heads=g("num_heads", 8),
@@ -104,10 +104,10 @@ run: |
 
   ckpt, g = load_checkpoint(f"{SMOKE_DIR}/dynamics/best_model.pt")
   dynamics = TokenDynamicsModel(
-      vocab_size=g("vocab_size", 1024),
+      vocab_size=g("vocab_size", 512),
       num_patches=g("num_patches", 256),
-      action_dim=g("action_dim", 3),
-      n_actions=g("n_actions", 8),
+      action_dim=g("action_dim", 2),
+      n_actions=g("n_actions", 4),
       embed_dim=g("embed_dim", 128),
       num_heads=g("num_heads", 8),
       num_blocks=g("num_blocks", 4),
@@ -121,7 +121,7 @@ run: |
 
   with torch.no_grad():
       _, tokens, _ = tokenizer.encoder(frames)       # (1, 4, 256)
-      actions = inverse.encode(frames)               # (1, 3, 3)
+      actions = inverse.encode(frames)               # (1, 3, 2)
       rollout = dynamics.rollout(tokens[:, 0], actions)  # (1, 4, 256)
 
   assert rollout.shape == (1, 4, 256), f"Bad rollout shape: {rollout.shape}"

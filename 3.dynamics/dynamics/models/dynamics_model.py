@@ -41,10 +41,10 @@ class TokenDynamicsModel(nn.Module):
 
     def __init__(
         self,
-        vocab_size: int = 1024,
+        vocab_size: int = 512,
         num_patches: int = 256,
-        action_dim: int = 3,
-        n_actions: int = 8,
+        action_dim: int = 2,
+        n_actions: int = 4,
         embed_dim: int = 128,
         num_heads: int = 8,
         num_blocks: int = 4,

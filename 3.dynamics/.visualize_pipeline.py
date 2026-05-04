@@ -37,7 +37,7 @@ def visualize_token_vocabulary(save_path: str):
     """
     print("Generating token vocabulary visualization...")
 
-    vocab_size = 1024
+    vocab_size = 512
     embed_dim = 128
     num_patches = 256
     num_frames = 4
@@ -64,8 +64,8 @@ def visualize_token_vocabulary(save_path: str):
     stages = [
         (5, 8.5, "Raw Frames\n(B, T, C, H, W)", "lightblue"),
         (5, 6.5, "Patch Embeddings\n(B, T, N, E)", "lightyellow"),
-        (5, 4.5, "FSQ Latents\n(B, T, N, 5)", "lightcoral"),
-        (5, 2.5, "Token IDs\n(B, T, N)  ∈ [0, 1023]", "lightgreen"),
+        (5, 4.5, "FSQ Latents\n(B, T, N, 3)", "lightcoral"),
+        (5, 2.5, "Token IDs\n(B, T, N)  ∈ [0, 511]", "lightgreen"),
     ]
     for x, y, label, color in stages:
         rect = mpatches.FancyBboxPatch(
@@ -82,7 +82,7 @@ def visualize_token_vocabulary(save_path: str):
             arrowprops=dict(arrowstyle="->", color="black"),
         )
 
-    ax1.text(5, 1.0, f"vocab_size = {vocab_size}  (= 4⁵ bins)", ha="center", fontsize=9,
+    ax1.text(5, 1.0, f"vocab_size = {vocab_size}  (= 8³ bins)", ha="center", fontsize=9,
              bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.6))
 
     # Middle: 2D PCA of embedding matrix
@@ -139,7 +139,7 @@ def visualize_action_conditioning(save_path: str):
     num_patches = 16
     grid_size = 4
     embed_dim = 32
-    action_dim = 3
+    action_dim = 2
 
     model = TokenDynamicsModel(
         vocab_size=256,
@@ -150,7 +150,7 @@ def visualize_action_conditioning(save_path: str):
     )
 
     tokens  = torch.randint(0, 256, (1, 1, num_patches))
-    actions = torch.tensor([[[1.0, -1.0, 1.0]]])
+    actions = torch.tensor([[[1.0, -1.0]]])
 
     with torch.no_grad():
         x_before = model.token_embed(tokens.long())[0, 0]  # (N, E)
@@ -395,12 +395,12 @@ def visualize_teacher_forcing(save_path: str):
         num_heads=4,
         num_blocks=2,
         grid_size=grid_size,
-        action_dim=3,
+        action_dim=2,
     )
     model.eval()
 
     tokens  = torch.randint(0, vocab_size, (1, T, num_patches))
-    actions = torch.randn(1, T - 1, 3) * 0.5
+    actions = torch.randn(1, T - 1, 2) * 0.5
 
     import torch.nn.functional as F
     with torch.no_grad():

@@ -1,7 +1,7 @@
 """
 Interactive World Model Player.
 
-Play the learned world model by pressing keys 1-8 to select actions.
+Play the learned world model by pressing keys 1-4 to select actions.
 The model predicts the next frame based on current frame + selected action.
 
 Usage (from repo root):
@@ -10,7 +10,7 @@ Usage (from repo root):
         --start-video ./2.inverse-dynamics/data/sample.mp4
 
 Controls:
-    1-8: Select action (maps to 8 discrete action vectors)
+    1-4: Select action (maps to 4 discrete action vectors)
     R: Reset to initial frame
     S: Save current frame
     Q/ESC: Quit
@@ -39,25 +39,17 @@ from inverse_dynamics import LatentActionModel
 
 # Action mappings
 ACTION_VECTORS = {
-    0: [-1, -1, -1],
-    1: [+1, -1, -1],
-    2: [-1, +1, -1],
-    3: [+1, +1, -1],
-    4: [-1, -1, +1],
-    5: [+1, -1, +1],
-    6: [-1, +1, +1],
-    7: [+1, +1, +1],
+    0: [-1, -1],
+    1: [+1, -1],
+    2: [-1, +1],
+    3: [+1, +1],
 }
 
 ACTION_NAMES = {
-    0: "[-1,-1,-1]",
-    1: "[+1,-1,-1]",
-    2: "[-1,+1,-1]",
-    3: "[+1,+1,-1]",
-    4: "[-1,-1,+1]",
-    5: "[+1,-1,+1]",
-    6: "[-1,+1,+1]",
-    7: "[+1,+1,+1]",
+    0: "[-1,-1]",
+    1: "[+1,-1]",
+    2: "[-1,+1]",
+    3: "[+1,+1]",
 }
 
 
@@ -134,20 +126,12 @@ def get_action_key_map(use_pygame: bool = False) -> dict:
             pygame.K_2: ACTION_VECTORS[1],
             pygame.K_3: ACTION_VECTORS[2],
             pygame.K_4: ACTION_VECTORS[3],
-            pygame.K_5: ACTION_VECTORS[4],
-            pygame.K_6: ACTION_VECTORS[5],
-            pygame.K_7: ACTION_VECTORS[6],
-            pygame.K_8: ACTION_VECTORS[7],
         }
     return {
         ord('1'): ACTION_VECTORS[0],
         ord('2'): ACTION_VECTORS[1],
         ord('3'): ACTION_VECTORS[2],
         ord('4'): ACTION_VECTORS[3],
-        ord('5'): ACTION_VECTORS[4],
-        ord('6'): ACTION_VECTORS[5],
-        ord('7'): ACTION_VECTORS[6],
-        ord('8'): ACTION_VECTORS[7],
     }
 
 
@@ -191,7 +175,7 @@ def run_pygame(model, config, start_frame, device, display_size):
     pygame.init()
 
     screen = pygame.display.set_mode((display_size, display_size + 60))
-    pygame.display.set_caption("World Model Player - Press 1-8 for actions")
+    pygame.display.set_caption("World Model Player - Press 1-4 for actions")
 
     font = pygame.font.Font(None, 24)
     clock = pygame.time.Clock()
@@ -246,7 +230,7 @@ def run_pygame(model, config, start_frame, device, display_size):
             action_text = font.render(f"Action: {action_idx + 1} {ACTION_NAMES[action_idx]}", True, (100, 255, 100))
             screen.blit(action_text, (10, info_y + 20))
 
-        controls_text = font.render("1-8: Action | R: Reset | S: Save | Q: Quit", True, (150, 150, 150))
+        controls_text = font.render("1-4: Action | R: Reset | S: Save | Q: Quit", True, (150, 150, 150))
         screen.blit(controls_text, (10, info_y + 40))
 
         pygame.display.flip()
@@ -266,7 +250,7 @@ def run_cv2(model, config, start_frame, device, display_size):
     save_count = 0
 
     print("\nControls:")
-    print("  1-8: Select action")
+    print("  1-4: Select action")
     print("  R: Reset to initial frame")
     print("  S: Save current frame")
     print("  Q/ESC: Quit")
@@ -280,7 +264,7 @@ def run_cv2(model, config, start_frame, device, display_size):
 
         cv2.putText(frame_bgr, f"Frame: {frame_count}", (10, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-        cv2.putText(frame_bgr, "Press 1-8 for actions, Q to quit", (10, display_size - 10),
+        cv2.putText(frame_bgr, "Press 1-4 for actions, Q to quit", (10, display_size - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
 
         cv2.imshow("World Model Player", frame_bgr)

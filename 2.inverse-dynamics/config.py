@@ -31,7 +31,7 @@ class ModelConfig:
     num_blocks: int = 4
 
     # Action space
-    n_actions: int = 8            # Discrete action vocabulary (2^3 = 8)
+    n_actions: int = 4            # Discrete action vocabulary (2^2 = 4)
 
     # Conditioning
     use_adaptive_conditioning: bool = True  # Enable adaptive layer norm conditioning

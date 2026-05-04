@@ -239,12 +239,12 @@ def visualize_fsq(save_path: str):
     print("Generating FSQ quantization visualization...")
 
     # Create FSQ module
-    fsq = FiniteScalarQuantizer(latent_dim=5, num_bins=4)
+    fsq = FiniteScalarQuantizer(latent_dim=3, num_bins=8)
 
     # Generate random latent values (simulating encoder output)
     # Using a realistic distribution from a neural network
     torch.manual_seed(42)
-    z = torch.randn(1000, 5)  # 1000 samples, 5 latent dims
+    z = torch.randn(1000, 3)  # 1000 samples, 3 latent dims
 
     # Quantize
     with torch.no_grad():
@@ -263,7 +263,7 @@ def visualize_fsq(save_path: str):
     axes[0].axvline(x=-1, color='red', linestyle='--', alpha=0.5, label='Bounds')
     axes[0].axvline(x=1, color='red', linestyle='--', alpha=0.5)
     # Add quantization levels
-    quant_levels = np.linspace(-1, 1, 4)
+    quant_levels = np.linspace(-1, 1, 8)
     for ql in quant_levels:
         axes[0].axvline(x=ql, color='green', linestyle=':', alpha=0.7)
     axes[0].set_xlim(-1.2, 1.2)
@@ -272,13 +272,13 @@ def visualize_fsq(save_path: str):
     # Show how continuous values map to discrete bins
     x_cont = np.linspace(-2, 2, 200)
     x_bounded = np.tanh(x_cont)
-    x_scaled = (x_bounded + 1) / 2 * 3  # Scale to [0, 3]
+    x_scaled = (x_bounded + 1) / 2 * 7  # Scale to [0, 7]
     x_rounded = np.round(x_scaled)
-    x_quant = x_rounded / 3 * 2 - 1  # Back to [-1, 1]
+    x_quant = x_rounded / 7 * 2 - 1  # Back to [-1, 1]
 
     axes[1].plot(x_cont, x_bounded, 'b-', linewidth=2, label='tanh(z)', alpha=0.7)
     axes[1].plot(x_cont, x_quant, 'r-', linewidth=2, label='Quantized', alpha=0.7)
-    axes[1].set_title('Quantization Function\n(num_bins=4)', fontsize=12)
+    axes[1].set_title('Quantization Function\n(num_bins=8)', fontsize=12)
     axes[1].set_xlabel('Input z', fontsize=10)
     axes[1].set_ylabel('Output', fontsize=10)
     axes[1].legend(fontsize=9)
