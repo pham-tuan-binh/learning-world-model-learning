@@ -1,7 +1,3 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 
 This is an educational repository for exploring world models in robotics. A world model is a prediction model that, given the current state and action, predicts the next state. The focus is specifically on video world models where frames are predicted based on current video frame + action.

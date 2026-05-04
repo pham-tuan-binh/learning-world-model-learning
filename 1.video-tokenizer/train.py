@@ -467,17 +467,16 @@ def main():
             f"Time: {epoch_time:.1f}s"
         )
 
-        # Save checkpoint
-        if (epoch + 1) % 10 == 0 or val_loss < best_val_loss:
-            save_checkpoint(
-                model=model,
-                optimizer=optimizer,
-                epoch=epoch,
-                global_step=global_step,
-                loss=val_loss,
-                config=config,
-                path=checkpoint_dir / f"checkpoint_epoch{epoch + 1}.pt",
-            )
+        # Save checkpoint every epoch for preemption recovery
+        save_checkpoint(
+            model=model,
+            optimizer=optimizer,
+            epoch=epoch,
+            global_step=global_step,
+            loss=val_loss,
+            config=config,
+            path=checkpoint_dir / f"checkpoint_epoch{epoch + 1}.pt",
+        )
 
         # Save best model
         if val_loss < best_val_loss:

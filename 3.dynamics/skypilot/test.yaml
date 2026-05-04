@@ -1,0 +1,134 @@
+name: lwm-full-test
+
+workdir: .
+
+resources:
+  cloud: gcp
+  cpus: 4+
+  memory: 16+
+  disk_size: 50
+  autostop:
+    idle_minutes: 10
+    down: true
+    wait_for: none
+
+setup: |
+  set -e
+  if ! command -v uv >/dev/null 2>&1; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+  fi
+  export PATH="$HOME/.local/bin:$PATH"
+  uv sync --all-packages
+
+run: |
+  set -e
+  export PATH="$HOME/.local/bin:$PATH"
+
+  SMOKE_DIR=/tmp/lwm-smoke
+
+  echo "=== Step 1: Smoke test video tokenizer ==="
+  uv run python 1.video-tokenizer/train.py \
+    --use-dummy-data \
+    --num-epochs 1 \
+    --batch-size 4 \
+    --embed-dim 16 \
+    --num-heads 2 \
+    --num-blocks 1 \
+    --num-workers 0 \
+    --checkpoint-dir "$SMOKE_DIR/tokenizer"
+
+  echo "=== Step 2: Smoke test inverse dynamics ==="
+  uv run python 2.inverse-dynamics/train.py \
+    --use-dummy-data \
+    --num-epochs 1 \
+    --batch-size 4 \
+    --embed-dim 16 \
+    --num-heads 2 \
+    --num-blocks 1 \
+    --num-workers 0 \
+    --checkpoint-dir "$SMOKE_DIR/inverse"
+
+  echo "=== Step 3: Smoke test dynamics ==="
+  uv run --project 3.dynamics python 3.dynamics/train.py \
+    --use-dummy-data \
+    --num-epochs 1 \
+    --batch-size 4 \
+    --embed-dim 16 \
+    --num-heads 2 \
+    --num-blocks 1 \
+    --num-workers 0 \
+    --checkpoint-dir "$SMOKE_DIR/dynamics"
+
+  echo "=== Step 4: Full pipeline rollout test ==="
+  cat > /tmp/lwm_pipeline_test.py << 'PYEOF'
+  import torch
+  from video_tokenizer import VideoTokenizer
+  from inverse_dynamics import LatentActionModel
+  from dynamics import TokenDynamicsModel
+
+  SMOKE_DIR = "/tmp/lwm-smoke"
+
+  def load_checkpoint(path):
+      ckpt = torch.load(path, map_location="cpu", weights_only=False)
+      mc = ckpt["config"].model if ckpt.get("config") else None
+      g = lambda k, d: getattr(mc, k, d) if mc else d
+      return ckpt, g
+
+  ckpt, g = load_checkpoint(f"{SMOKE_DIR}/tokenizer/best_model.pt")
+  tokenizer = VideoTokenizer(
+      in_channels=g("in_channels", 3),
+      frame_size=g("frame_size", 128),
+      num_frames=g("num_frames", 4),
+      patch_size=g("patch_size", 8),
+      embed_dim=g("embed_dim", 128),
+      num_heads=g("num_heads", 8),
+      num_blocks=g("num_blocks", 4),
+      latent_dim=g("latent_dim", 5),
+      num_bins=g("num_bins", 4),
+  )
+  tokenizer.load_state_dict(ckpt["model_state_dict"])
+  tokenizer.eval()
+
+  ckpt, g = load_checkpoint(f"{SMOKE_DIR}/inverse/best_model.pt")
+  inverse = LatentActionModel(
+      frame_size=g("frame_size", 128),
+      n_actions=g("n_actions", 8),
+      patch_size=g("patch_size", 8),
+      embed_dim=g("embed_dim", 128),
+      num_heads=g("num_heads", 8),
+      num_blocks=g("num_blocks", 4),
+      use_adaptive_conditioning=g("use_adaptive_conditioning", True),
+  )
+  inverse.load_state_dict(ckpt["model_state_dict"])
+  inverse.eval()
+
+  ckpt, g = load_checkpoint(f"{SMOKE_DIR}/dynamics/best_model.pt")
+  dynamics = TokenDynamicsModel(
+      vocab_size=g("vocab_size", 1024),
+      num_patches=g("num_patches", 256),
+      action_dim=g("action_dim", 3),
+      n_actions=g("n_actions", 8),
+      embed_dim=g("embed_dim", 128),
+      num_heads=g("num_heads", 8),
+      num_blocks=g("num_blocks", 4),
+      grid_size=g("grid_size", 16),
+      max_frames=g("max_frames", 32),
+  )
+  dynamics.load_state_dict(ckpt["model_state_dict"])
+  dynamics.eval()
+
+  frames = torch.rand(1, 4, 3, 128, 128)
+
+  with torch.no_grad():
+      _, tokens, _ = tokenizer.encoder(frames)       # (1, 4, 256)
+      actions = inverse.encode(frames)               # (1, 3, 3)
+      rollout = dynamics.rollout(tokens[:, 0], actions)  # (1, 4, 256)
+
+  assert rollout.shape == (1, 4, 256), f"Bad rollout shape: {rollout.shape}"
+  print(f"Tokenizer   -> tokens  {tuple(tokens.shape)}")
+  print(f"Inv dynamics -> actions {tuple(actions.shape)}")
+  print(f"Dynamics    -> rollout  {tuple(rollout.shape)}")
+  print("Full pipeline test passed.")
+  PYEOF
+
+  uv run --project 3.dynamics python /tmp/lwm_pipeline_test.py

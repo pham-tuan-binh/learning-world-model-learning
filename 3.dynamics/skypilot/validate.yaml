@@ -1,0 +1,63 @@
+name: lwm-dynamics-validate
+
+workdir: .
+
+resources:
+  use_spot: true
+  cpus: 8+
+  memory: 32+
+  disk_size: 100
+  image_id: docker:nvcr.io/nvidia/pytorch:25.03-py3
+  autostop:
+    idle_minutes: 10
+    down: false
+    wait_for: none
+  any_of:
+    - infra: gcp
+      accelerators: A100-80GB:1
+    - infra: gcp
+      accelerators: A100:1
+    - infra: gcp
+      accelerators: L4:1
+
+envs:
+  DATA_PATH: ./3.dynamics/data
+  DATA_TYPE: folder
+  TOKENIZER_CHECKPOINT: ./1.video-tokenizer/checkpoints/best_model.pt
+  INVERSE_DYNAMICS_CHECKPOINT: ./2.inverse-dynamics/checkpoints/best_model.pt
+  CHECKPOINT: ./3.dynamics/checkpoints/best_model.pt
+  BATCH_SIZE: "32"
+  NUM_WORKERS: "8"
+  PRECOMPUTE_BATCH_SIZE: "16"
+
+setup: |
+  set -e
+  if ! command -v uv >/dev/null 2>&1; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+  fi
+  export PATH="$HOME/.local/bin:$PATH"
+
+  uv sync --all-packages
+
+  PERSISTENT_DATA_DIR="$HOME/persistent/learning-world-model-learning/3.dynamics/data"
+  mkdir -p "$PERSISTENT_DATA_DIR"
+  rm -rf ./3.dynamics/data
+  ln -s "$PERSISTENT_DATA_DIR" ./3.dynamics/data
+
+  if [ -z "$(ls -A "$PERSISTENT_DATA_DIR"/*.mp4 2>/dev/null)" ]; then
+    ln -sfn "$PWD/2.inverse-dynamics/data/download_doom.sh" "$PERSISTENT_DATA_DIR/download_doom.sh"
+    bash "$PERSISTENT_DATA_DIR/download_doom.sh"
+  fi
+
+run: |
+  set -e
+  export PATH="$HOME/.local/bin:$PATH"
+  uv run --project 3.dynamics python 3.dynamics/validate.py \
+    --checkpoint "$CHECKPOINT" \
+    --data-path "$DATA_PATH" \
+    --data-type "$DATA_TYPE" \
+    --tokenizer-checkpoint "$TOKENIZER_CHECKPOINT" \
+    --inverse-dynamics-checkpoint "$INVERSE_DYNAMICS_CHECKPOINT" \
+    --batch-size "$BATCH_SIZE" \
+    --num-workers "$NUM_WORKERS" \
+    --precompute-batch-size "$PRECOMPUTE_BATCH_SIZE"

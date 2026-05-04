@@ -211,7 +211,7 @@ The dynamics model must learn to:
 - Handle occlusions and reappearances
 - Generate consistent predictions over multiple steps
 
-Common architectures include **Transformers** (predict next tokens autoregressively), **MaskGIT** (parallel masked prediction), and **Diffusion models** (iterative denoising). This will be explored in detail in `3.dynamics-model`.
+Common architectures include **Transformers** (predict next tokens autoregressively), **MaskGIT** (parallel masked prediction), and **Diffusion models** (iterative denoising). This will be explored in detail in `3.dynamics`.
 
 The in-depth article to answer this question will be released in February.
 
@@ -279,6 +279,14 @@ learning-world-model-learning/
 │   ├── train.py
 │   ├── validate.py
 │   └── README.md
+├── 3.dynamics/                 # How to predict next tokens from tokens + actions
+│   ├── dynamics/               # Model code (importable module)
+│   ├── checkpoints/
+│   ├── data/
+│   ├── config.py
+│   ├── train.py
+│   ├── validate.py
+│   └── README.md
 └── ...
 ```
 
@@ -301,15 +309,13 @@ The repository uses `uv` to handle dependencies.
 
 # Agentic Learning
 
-This repository is optimized for Claude Code.
-
-I included my CLAUDE.md within this repository. It is instructed to replicate my way of writing and reasoning. I recommend pairing this repository with an agent and ask questions along the way.
+I included my AGENTS.md within this repository. It is instructed to replicate my way of writing and reasoning. I recommend pairing this repository with an agent and ask questions along the way.
 
 I truly believe in a world where every course is included with an agent that can converse in the instructor's prose. Hopefully, you'll find such experience interacting with this codebase.
 
 # Credits
 
-The writing is completely written by me with exception of some visualizations handled by Claude Code. The code is partially written by me in parts where it matters, the rest agent handles. For example, I used Claude Code to clean up and add clear comments so anyone can understand how things work easily.
+The writing is completely written by me with exception of some visualizations handled by agents. The code is partially written by me in parts where it matters, the rest agent handles. For example, I used Codex and Claude Code to clean up and add clear comments so anyone can understand how things work easily.
 
 [TinyWorlds](https://github.com/AlmondGod/tinyworlds) by @AlmondGod inspired me greatly to do this write up and build a world model from scratch.
 
