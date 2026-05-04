@@ -12,3 +12,6 @@ wheels/
 # Video files
 *.mp4
 *.zip
+
+# Claude Code
+.claude/
