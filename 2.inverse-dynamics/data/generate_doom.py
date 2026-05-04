@@ -49,7 +49,6 @@ SCENARIOS = [
     ("defend_the_center", 3),
     ("health_gathering",  4),
     ("defend_the_line",   3),
-    ("deathmatch",        2),
 ]
 
 
