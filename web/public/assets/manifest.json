@@ -4,9 +4,9 @@
   "decoderModel": "decoder.onnx",
   "webgpuDynamicsModel": "dynamics.webgpu.onnx",
   "webgpuDecoderModel": "decoder.webgpu.onnx",
+  "webgpuModelPrecision": "fp32",
   "quantized": true,
   "modelPrecision": "int8-dynamic",
-  "webgpuModelPrecision": "fp32",
   "executionProviders": [
     "wasm"
   ],
