@@ -31,8 +31,9 @@ envs:
   EMBED_DIM: "256"
   NUM_BLOCKS: "6"
   NUM_WORKERS: "8"
-  BATCH_SIZE: "16"
+  BATCH_SIZE: "48"
   PATCH_SIZE: "4"
+  LEARNING_RATE: "9e-4"
 
 setup: |
   set -e
@@ -136,7 +137,8 @@ run: |
       --num-workers "$NUM_WORKERS" \
       --batch-size "$BATCH_SIZE" \
       --patch-size "$PATCH_SIZE" \
-      --num-epochs 30 \
+      --num-epochs 70 \
+      --learning-rate "$LEARNING_RATE" \
       "${RESUME_ARGS[@]}"
   fi
 
