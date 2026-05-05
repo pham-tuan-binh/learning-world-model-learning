@@ -652,7 +652,7 @@ It's also self-contained. The open-source `freedoom2.wad` is bundled with the vi
 
 #### How I generate
 
-The script is at [`2.inverse-dynamics/data/generate_doom.py`](../2.inverse-dynamics/data/generate_doom.py). It runs 4 bot personalities across 6 Doom scenarios:
+The script is at [`2.inverse-dynamics/data/generate_doom.py`](../2.inverse-dynamics/data/generate_doom.py). It runs 4 bot personalities against a single scenario:
 
 | Personality | Behavior                                                    |
 | ----------- | ----------------------------------------------------------- |
@@ -661,16 +661,11 @@ The script is at [`2.inverse-dynamics/data/generate_doom.py`](../2.inverse-dynam
 | Wanderer    | Picks a random action combo and holds it for 1-2 seconds    |
 | Rusher      | Alternates between sprinting forward and snapping turns     |
 
-| Scenario          | Character                                 |
-| ----------------- | ----------------------------------------- |
-| deadly_corridor   | Linear corridor with enemies              |
-| my_way_home       | Maze navigation                           |
-| defend_the_center | Arena, enemies spawn and rush in          |
-| health_gathering  | Open map, collect health packs to survive |
-| defend_the_line   | Fixed position, enemies approach in waves |
-| deathmatch        | Open map, free-roam combat                |
+I use only `defend_the_center`: a circular arena where enemies spawn and rush in. You have three actions — turn left, turn right, shoot. No movement.
 
-For each video, I randomly sample one scenario and one personality. 100 videos at 60 seconds each at 15fps gives 90,000 frames, or about 22,500 training clips at 4 frames per clip.
+I restricted to this single scenario intentionally. With multiple scenarios the visual distribution is too broad for a small model — the tokenizer and inverse dynamics model have to cover wildly different environments, and the learned actions end up meaningless because "turn left in a corridor" and "turn left in an open arena" look very different visually. Fixing the scenario to one consistent environment makes the action space well-defined and the visual dynamics easier to learn.
+
+100 videos at 60 seconds each at 15fps gives 90,000 frames, or about 22,500 training clips at 4 frames per clip.
 
 #### Dataset samples
 
