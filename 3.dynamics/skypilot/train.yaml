@@ -68,7 +68,8 @@ run: |
         --output-dir "$DATA_PATH" \
         --num-videos 100 \
         --fps 15 \
-        --duration 60
+        --duration 60 \
+        --scenarios defend_the_center
       echo "=== Uploading dataset to GCS cache ==="
       cp "$DATA_PATH"/*.mp4 "$DATA_CACHE/"
     fi

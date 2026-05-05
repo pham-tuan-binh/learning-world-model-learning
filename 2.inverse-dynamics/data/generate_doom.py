@@ -288,10 +288,20 @@ def main():
     parser.add_argument("--fps", type=int, default=15)
     parser.add_argument("--duration", type=int, default=60, help="seconds per video")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--scenarios", type=str, nargs="+",
+                        help="scenario names to use (default: all). e.g. --scenarios defend_the_center")
     args = parser.parse_args()
 
     random.seed(args.seed)
     np.random.seed(args.seed)
+
+    scenario_pool = SCENARIOS
+    if args.scenarios:
+        valid = {s for s, _ in SCENARIOS}
+        for name in args.scenarios:
+            if name not in valid:
+                raise ValueError(f"Unknown scenario '{name}'. Valid: {sorted(valid)}")
+        scenario_pool = [(s, fs) for s, fs in SCENARIOS if s in args.scenarios]
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -307,11 +317,11 @@ def main():
     total = args.num_videos
 
     print(f"Generating {total - start} videos ({total} total) → {args.output_dir}")
-    print(f"  {len(SCENARIOS)} scenarios × {len(AGENTS)} agents | {args.duration}s @ {args.fps}fps each")
+    print(f"  {len(scenario_pool)} scenarios × {len(AGENTS)} agents | {args.duration}s @ {args.fps}fps each")
     print()
 
     for i in range(start, total):
-        scenario_cfg, frame_skip = random.choice(SCENARIOS)
+        scenario_cfg, frame_skip = random.choice(scenario_pool)
         agent_cls = random.choice(AGENTS)
         out_path = str(Path(args.output_dir) / f"doom_{i:04d}.mp4")
 
