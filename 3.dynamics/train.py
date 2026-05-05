@@ -51,6 +51,7 @@ def train_epoch(
     config: Config,
     epoch: int,
     global_step: int,
+    total_steps: int,
 ) -> tuple:
     """Train for one epoch."""
     model.train()
@@ -62,7 +63,6 @@ def train_epoch(
     num_batches = 0
     last_log_time = time.time()
     last_log_step = global_step
-    total_steps = config.training.num_epochs * len(dataloader)
 
     for batch in dataloader:
         tokens = batch["tokens"].to(device)
@@ -149,6 +149,7 @@ def save_checkpoint(model, optimizer, epoch, global_step, loss, config, path):
         "loss": loss,
         "config": config,
     }
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     torch.save(checkpoint, path)
     print(f"  Saved checkpoint to {path}")
 
@@ -290,6 +291,7 @@ def main():
     print("=" * 60)
 
     checkpoint_dir = Path(config.checkpoint_dir)
+    total_steps = global_step + (config.training.num_epochs - start_epoch) * len(train_loader)
     for epoch in range(start_epoch, config.training.num_epochs):
         epoch_start = time.time()
         print(f"\nEpoch {epoch + 1}/{config.training.num_epochs}")
@@ -302,6 +304,7 @@ def main():
             config,
             epoch,
             global_step,
+            total_steps,
         )
         val_loss = validate(model, val_loader, config)
         epoch_time = time.time() - epoch_start

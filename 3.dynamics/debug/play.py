@@ -23,6 +23,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import time
+
 import torch
 import numpy as np
 
@@ -157,6 +159,7 @@ def predict_next_tokens(
     device: str,
     temperature: float,
     sample: bool,
+    max_context: int = 4,
 ) -> torch.Tensor:
     """
     Run one dynamics step given accumulated token and action histories.
@@ -165,6 +168,8 @@ def predict_next_tokens(
     action_history: list of (A,) tensors, length == len(token_history)
     Returns next token ids (N,).
     """
+    token_history = token_history[-max_context:]
+    action_history = action_history[-max_context:]
     ctx_tokens = torch.stack(token_history, dim=0).unsqueeze(0).to(device)     # (1, T, N)
     ctx_actions = torch.stack(action_history, dim=0).unsqueeze(0).to(device)   # (1, T, A)
 
@@ -176,7 +181,7 @@ def predict_next_tokens(
             sample=sample,
         )  # (1, N)
 
-    return next_tokens[0].cpu()
+    return next_tokens[0]
 
 
 def tensor_to_numpy(frame: torch.Tensor, display_size: int) -> np.ndarray:
@@ -195,28 +200,125 @@ def action_vector_to_index(vec) -> int:
 # Pygame renderer
 # ---------------------------------------------------------------------------
 
-def run_pygame(tokenizer, dynamics, start_tokens, start_frame_px, device, display_size, temperature, sample):
+def run_pygame(tokenizer, dynamics, start_tokens, start_frame_px, device, display_size, temperature, sample, max_context=4):
     if not PYGAME_AVAILABLE:
         raise ImportError("pygame required: uv add pygame")
 
     pygame.init()
-    screen = pygame.display.set_mode((display_size, display_size + 60))
-    pygame.display.set_caption("Dynamics Model Player - Press 1-4 for actions")
-    font = pygame.font.Font(None, 24)
+
+    # Two-zone panel:
+    #   zone 1 (top 100px) — 4 action circles
+    #   zone 2 (bottom 32px) — single info strip
+    PANEL_H  = 132
+    ZONE_H   = 100   # height of the button zone
+    WIN_W    = display_size
+
+    screen = pygame.display.set_mode((WIN_W, display_size + PANEL_H))
+    pygame.display.set_caption("World Model · Doom Dynamics")
+
+    def _font(size, bold=False):
+        for name in ("IBM Plex Mono", "Menlo", "Courier New", "monospace"):
+            try:
+                return pygame.font.SysFont(name, size, bold=bold)
+            except Exception:
+                pass
+        return pygame.font.Font(None, size + 6)
+
+    font_btn  = _font(22, bold=True)   # circle key labels
+    font_vec  = _font(12)              # action vector below circles
+    font_info = _font(14)              # info strip — bigger & readable
+
     clock = pygame.time.Clock()
 
-    action_dim = dynamics.action_dim
+    # Palette — web/tailwind.config.js verbatim
+    C_PAPER  = (255, 251, 240)
+    C_PAMPAS = (249, 245, 232)
+    C_RULE   = (242, 238, 228)
+    C_BORDER = (229, 225, 216)
+    C_CLOUDY = (178, 175, 168)
+    C_MUTE   = (204, 200, 192)
+    C_MID    = (127, 125, 120)
+    C_DARK   = ( 23,  23,  23)
 
-    token_history = [start_tokens.clone()]
-    action_history = []
+    # State
+    token_history    = [start_tokens.clone()]
+    action_history   = []
     current_frame_px = start_frame_px.clone()
-    frame_count = 0
-    last_action_idx = None
-    save_count = 0
+    frame_count      = 0
+    last_action_idx  = None
+    save_count       = 0
+    dyn_ms = dec_ms  = 0.0
 
-    key_to_action = {
-        getattr(pygame, f"K_{i+1}"): ACTION_VECTORS[i] for i in range(4)
-    }
+    key_map = {getattr(pygame, f"K_{i+1}"): i for i in range(4)}
+
+    # Button geometry — vertically centered inside zone 1
+    # block = circle (r=28) + 6px gap + vec label (~15px) = 77px tall
+    BTN_R   = 28
+    VEC_GAP = 6
+    BLOCK_H = BTN_R * 2 + VEC_GAP + 15
+    BTN_CY  = display_size + (ZONE_H - BLOCK_H) // 2 + BTN_R   # = display_size + 39
+    SPACING = 72
+    btn_x0  = (WIN_W - SPACING * 3) // 2
+    btn_cx  = [btn_x0 + i * SPACING for i in range(4)]
+
+    def step(action_idx):
+        nonlocal current_frame_px, frame_count, last_action_idx, dyn_ms, dec_ms
+        vec = ACTION_VECTORS[action_idx]
+        at  = torch.tensor(vec, dtype=torch.float32)
+        ah  = action_history + [at]
+        t0  = time.perf_counter()
+        nt  = predict_next_tokens(dynamics, token_history, ah, device, temperature, sample, max_context)
+        t1  = time.perf_counter()
+        current_frame_px = decode_tokens(tokenizer, nt, device)
+        t2  = time.perf_counter()
+        token_history.append(nt)
+        action_history[:] = ah
+        frame_count      += 1
+        last_action_idx   = action_idx
+        dyn_ms            = (t1 - t0) * 1000
+        dec_ms            = (t2 - t1) * 1000
+        print(f"Frame {frame_count}: Action {action_idx} {ACTION_NAMES[action_idx]} | "
+              f"dyn {dyn_ms:.1f}ms  dec {dec_ms:.1f}ms")
+
+    def draw_btn(idx, is_hot, is_prev):
+        cx, cy = btn_cx[idx], BTN_CY
+        if is_hot:
+            pygame.draw.circle(screen, C_DARK,   (cx, cy), BTN_R)
+            pygame.draw.circle(screen, C_DARK,   (cx, cy), BTN_R, 2)
+            label_col = C_PAPER
+            vec_col   = C_MUTE
+        elif is_prev:
+            pygame.draw.circle(screen, C_PAMPAS, (cx, cy), BTN_R)
+            pygame.draw.circle(screen, C_CLOUDY, (cx, cy), BTN_R, 2)
+            label_col = C_DARK
+            vec_col   = C_MID
+        else:
+            pygame.draw.circle(screen, C_PAPER,  (cx, cy), BTN_R)
+            pygame.draw.circle(screen, C_BORDER, (cx, cy), BTN_R, 2)
+            label_col = C_MID
+            vec_col   = C_MUTE
+
+        num_s = font_btn.render(str(idx + 1), True, label_col)
+        screen.blit(num_s, (cx - num_s.get_width() // 2, cy - num_s.get_height() // 2))
+
+        vec_s = font_vec.render(ACTION_NAMES[idx], True, vec_col)
+        screen.blit(vec_s, (cx - vec_s.get_width() // 2, cy + BTN_R + VEC_GAP))
+
+    def blit_row(parts, y):
+        """Render [(text, color), ...] left-to-right from x=16."""
+        x = 16
+        for text, col in parts:
+            s = font_info.render(text, True, col)
+            screen.blit(s, (x, y))
+            x += s.get_width()
+
+    def blit_row_right(parts, y):
+        """Render [(text, color), ...] right-aligned, ending 16px from right edge."""
+        surfs = [font_info.render(t, True, c) for t, c in parts]
+        x = WIN_W - 16 - sum(s.get_width() for s in surfs)
+        for s in surfs:
+            screen.blit(s, (x, y))
+            x += s.get_width()
 
     running = True
     while running:
@@ -227,51 +329,73 @@ def run_pygame(tokenizer, dynamics, start_tokens, start_frame_px, device, displa
                 if event.key in (pygame.K_ESCAPE, pygame.K_q):
                     running = False
                 elif event.key == pygame.K_r:
-                    token_history = [start_tokens.clone()]
-                    action_history = []
+                    token_history[:] = [start_tokens.clone()]
+                    action_history.clear()
                     current_frame_px = start_frame_px.clone()
                     frame_count = 0
                     last_action_idx = None
+                    dyn_ms = dec_ms = 0.0
                     print("Reset to starting frame")
                 elif event.key == pygame.K_s:
-                    arr = tensor_to_numpy(current_frame_px, display_size)
+                    arr  = tensor_to_numpy(current_frame_px, display_size)
                     path = f"frame_{save_count:04d}.png"
                     if CV2_AVAILABLE:
                         cv2.imwrite(path, cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
                     save_count += 1
                     print(f"Saved {path}")
-                elif event.key in key_to_action:
-                    action_vec = key_to_action[event.key]
-                    action_t = torch.tensor(action_vec, dtype=torch.float32)
-                    action_history_step = action_history + [action_t]
 
-                    next_tokens = predict_next_tokens(
-                        dynamics, token_history, action_history_step, device, temperature, sample
-                    )
-                    current_frame_px = decode_tokens(tokenizer, next_tokens, device)
+        pressed = pygame.key.get_pressed()
+        active_idx = None
+        for pkey, idx in key_map.items():
+            if pressed[pkey]:
+                active_idx = idx
+                step(idx)
+                break
 
-                    token_history.append(next_tokens)
-                    action_history = action_history_step
-                    frame_count += 1
-                    last_action_idx = action_vector_to_index(action_vec)
-                    print(f"Frame {frame_count}: Action {last_action_idx + 1} {ACTION_NAMES[last_action_idx]}")
+        # ── Render ─────────────────────────────────────────────────
+        screen.fill((0, 0, 0))
 
-        arr = tensor_to_numpy(current_frame_px, display_size)
-        surface = pygame.surfarray.make_surface(arr.swapaxes(0, 1))
-        screen.fill((30, 30, 30))
-        screen.blit(surface, (0, 0))
+        arr      = tensor_to_numpy(current_frame_px, display_size)
+        img_surf = pygame.surfarray.make_surface(arr.swapaxes(0, 1))
+        screen.blit(img_surf, (0, 0))
 
-        info_y = display_size + 5
-        screen.blit(font.render(f"Frame: {frame_count}", True, (255, 255, 255)), (10, info_y))
+        py = display_size
+        pygame.draw.rect(screen, C_PAPER, (0, py, WIN_W, PANEL_H))
+        pygame.draw.line(screen, C_RULE,  (0, py), (WIN_W, py), 1)
+
+        # ── Zone 1: action circles ──────────────────────────────────
+        for i in range(4):
+            draw_btn(i, active_idx == i, last_action_idx == i and active_idx != i)
+
+        # ── Divider between zones ───────────────────────────────────
+        pygame.draw.line(screen, C_RULE, (0, py + ZONE_H), (WIN_W, py + ZONE_H), 1)
+
+        # ── Zone 2: info strip ──────────────────────────────────────
+        # vertical center of the strip
+        info_y = py + ZONE_H + (PANEL_H - ZONE_H - font_info.get_height()) // 2
+
+        # left: frame count
+        blit_row([
+            ("frame  ", C_MID),
+            (f"{frame_count:04d}", C_DARK),
+        ], info_y)
+
+        # center: last action (only shown after first step)
         if last_action_idx is not None:
-            screen.blit(
-                font.render(f"Action: {last_action_idx + 1} {ACTION_NAMES[last_action_idx]}", True, (100, 255, 100)),
-                (10, info_y + 20),
-            )
-        screen.blit(
-            font.render("1-4: Action | R: Reset | S: Save | Q: Quit", True, (150, 150, 150)),
-            (10, info_y + 40),
-        )
+            parts = [("last  ", C_MID), (ACTION_NAMES[last_action_idx], C_DARK)]
+            total_w = sum(font_info.size(t)[0] for t, _ in parts)
+            x = (WIN_W - total_w) // 2
+            for text, col in parts:
+                s = font_info.render(text, True, col)
+                screen.blit(s, (x, info_y))
+                x += s.get_width()
+
+        # right: keyboard shortcuts
+        blit_row_right([
+            ("R", C_DARK), (" reset   ", C_MID),
+            ("S", C_DARK), (" save   ",  C_MID),
+            ("Q", C_DARK), (" quit",     C_MID),
+        ], info_y)
 
         pygame.display.flip()
         clock.tick(30)
@@ -283,7 +407,7 @@ def run_pygame(tokenizer, dynamics, start_tokens, start_frame_px, device, displa
 # OpenCV renderer
 # ---------------------------------------------------------------------------
 
-def run_cv2(tokenizer, dynamics, start_tokens, start_frame_px, device, display_size, temperature, sample):
+def run_cv2(tokenizer, dynamics, start_tokens, start_frame_px, device, display_size, temperature, sample, max_context=4):
     if not CV2_AVAILABLE:
         raise ImportError("OpenCV required: uv add opencv-python")
 
@@ -332,7 +456,7 @@ def run_cv2(tokenizer, dynamics, start_tokens, start_frame_px, device, display_s
             action_history_step = action_history + [action_t]
 
             next_tokens = predict_next_tokens(
-                dynamics, token_history, action_history_step, device, temperature, sample
+                dynamics, token_history, action_history_step, device, temperature, sample, max_context
             )
             current_frame_px = decode_tokens(tokenizer, next_tokens, device)
 
@@ -365,11 +489,25 @@ def main():
     parser.add_argument("--use-cv2", action="store_true")
     args = parser.parse_args()
 
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    if args.device:
+        device = args.device
+    elif torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
     print(f"Device: {device}\n")
 
     tokenizer, _ = load_tokenizer(args.tokenizer_checkpoint, device)
-    dynamics, _ = load_dynamics(args.dynamics_checkpoint, device)
+    dynamics, dyn_cfg = load_dynamics(args.dynamics_checkpoint, device)
+
+    max_context = getattr(getattr(dyn_cfg, "model", None), "num_frames", 4)
+    print(f"Context window: {max_context} frames")
+
+    print("Compiling models...")
+    tokenizer.decode_indices = torch.compile(tokenizer.decode_indices, mode="reduce-overhead")
+    dynamics.predict_next = torch.compile(dynamics.predict_next, mode="reduce-overhead")
 
     frame_size = tokenizer.encoder.frame_size
     print(f"\nLoading starting frame from: {args.start_video}")
@@ -387,10 +525,10 @@ def main():
         if not PYGAME_AVAILABLE:
             print("pygame not found, falling back to OpenCV")
         run_cv2(tokenizer, dynamics, start_tokens, start_frame_px, device,
-                args.display_size, args.temperature, args.sample)
+                args.display_size, args.temperature, args.sample, max_context)
     else:
         run_pygame(tokenizer, dynamics, start_tokens, start_frame_px, device,
-                   args.display_size, args.temperature, args.sample)
+                   args.display_size, args.temperature, args.sample, max_context)
 
 
 if __name__ == "__main__":

@@ -227,7 +227,7 @@ A rule of thumb: never optimize before you know your thing actually works. Wasti
 
 #### How I do data
 
-The codec problem the note above mentions is concrete. My `VideoFolderDataset` decodes `.mp4` files using `cv2.VideoCapture` on the CPU. H.264 does not store frames independently: it stores keyframes and then deltas from those keyframes. So seeking to a random position and reading 4 frames means the codec has to find the nearest keyframe, decode every intermediate frame to get there, and only then hand you the frames you actually asked for. All of this is sequential CPU work.
+My `VideoFolderDataset` decodes `.mp4` files using `cv2.VideoCapture` on the CPU. H.264 does not store frames independently: it stores keyframes and then deltas from those keyframes. So seeking to a random position and reading 4 frames means the codec has to find the nearest keyframe, decode every intermediate frame to get there, and only then hand you the frames you actually asked for. All of this is sequential CPU work.
 
 From [1.video-tokenizer/video_tokenizer/data_utils.py](../1.video-tokenizer/video_tokenizer/data_utils.py):
 
@@ -450,8 +450,9 @@ Similar is frequency collapse: instead of copying the previous frame, the model 
 
 The scariest one is action-ignoring collapse. The model learns genuine visual dynamics, predicts plausible next frames from token context, but does this without touching the action conditioning at all. The loss looks fine. The reconstructions look fine. But give it the same starting frame with two different actions, and it produces the same future both times. You can only catch this during validation by sweeping actions and checking whether futures diverge. Notice that the current validate.py only checks cross-entropy loss:
 
+From [validate.py](validate.py):
+
 ```python
-# From validate.py
 def validate(model, dataloader, device) -> float:
     model.eval()
     with torch.no_grad():
@@ -465,8 +466,9 @@ This tells you nothing about whether different actions produce different futures
 
 There is also a subtler failure that lives one stage earlier in the video tokenizer: codebook collapse. The tokenizer maps every patch to one of 512 discrete tokens, but nothing forces it to use all of them. If the dataset is visually repetitive, think the same wall textures and floor tiles, the model can achieve low reconstruction loss while only using a small fraction of the vocabulary. The dynamics model then trains on that sparse token distribution, which makes its prediction problem easy and limits how much the world model can actually express. The fix is entropy regularization on the tokenizer. You add a term to the training loss that penalizes concentrated codebook usage and pushes the model toward a more uniform distribution over codes within each batch.
 
+From [1.video-tokenizer/video_tokenizer/models/video_tokenizer.py](../1.video-tokenizer/video_tokenizer/models/video_tokenizer.py):
+
 ```python
-# From video_tokenizer/models/video_tokenizer.py
 def _codebook_entropy_loss(self, z: torch.Tensor) -> torch.Tensor:
     num_bins = self.encoder.num_bins
 
@@ -491,8 +493,9 @@ The key idea is that instead of looking at hard token counts (which have no grad
 
 The last one is more of a code bug than a training failure: causal leakage. If the temporal attention mask isn't strictly upper triangular, patches at frame `t` can attend to frames `t+1` or later. The model trivially predicts the future by looking at it, loss drops to near-zero immediately, and you think you've built a great model. The fix is always enforcing `causal_temporal=True` in the transformer constructor:
 
+From [dynamics/models/dynamics_model.py](dynamics/models/dynamics_model.py):
+
 ```python
-# From dynamics/models/dynamics_model.py
 self.transformer = SpatioTemporalTransformer(
     embed_dim=embed_dim,
     num_heads=num_heads,
@@ -513,8 +516,9 @@ In the pre-training phase, instead of `inverse_model.encode(frames)` producing u
 
 Then you switch to the standard unsupervised pipeline on the large unlabeled dataset:
 
+From [dynamics/data_utils.py](dynamics/data_utils.py):
+
 ```python
-# From dynamics/data_utils.py
 with torch.no_grad():
     for batch_idx, frames in enumerate(video_loader):
         frames = frames.to(self.precompute_device)
@@ -536,8 +540,9 @@ This is exactly what OpenAI did with [VPT (Video Pre-Training)](https://github.c
 
 The dynamics model supports two action modes out of the box. The `_embed_actions` method checks the shape of the incoming tensor to decide which path to take:
 
+From [dynamics/models/dynamics_model.py](dynamics/models/dynamics_model.py):
+
 ```python
-# From dynamics/models/dynamics_model.py
 def _embed_actions(self, actions: torch.Tensor) -> torch.Tensor:
     if actions.dim() == 2:
         # Discrete action id path: (B, T) -> (B, T, E)
@@ -566,6 +571,12 @@ The tradeoff is planning. With `n_actions = 8` discrete codes, you can run 8 rol
 There's also a regularization argument for discrete. The FSQ bottleneck forces the inverse dynamics encoder to compress the frame delta into one of N categories, which strips out lighting noise, compression artifacts, and other things that look like motion but aren't. Continuous actions carry all of that along for free.
 
 The cost of discrete is information loss. With 8 buckets, fine-grained movements that are close in behavior collapse into the same code. Continuous actions avoid this entirely, which matters if you specifically need smooth interpolation between actions in latent space, e.g. for a learned planner that optimizes through the action space with gradients.
+
+## Live Demo
+
+Now, I know many of you guys won't even bother to run the experiments in this repo. So I created a live demo here for you to try.
+
+![Web Demo](../assets/3.dynamics/web_demo.gif)
 
 ## Dimensions Reference
 
@@ -663,15 +674,25 @@ The script is at [`2.inverse-dynamics/data/generate_doom.py`](../2.inverse-dynam
 
 For each video, I randomly sample one scenario and one personality. 100 videos at 60 seconds each at 15fps gives 90,000 frames, or about 22,500 training clips at 4 frames per clip.
 
+#### Dataset samples
+
+Five samples from the generated dataset (10s each):
+
+| Sample 1                                                                          | Sample 2                                                                          | Sample 3                                                                          |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| <video src="../assets/doom-samples/doom_1_trim.mp4" width="240" controls></video> | <video src="../assets/doom-samples/doom_2_trim.mp4" width="240" controls></video> | <video src="../assets/doom-samples/doom_3_trim.mp4" width="240" controls></video> |
+
+| Sample 4                                                                          | Sample 5                                                                          |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| <video src="../assets/doom-samples/doom_4_trim.mp4" width="240" controls></video> | <video src="../assets/doom-samples/doom_5_trim.mp4" width="240" controls></video> |
+
 #### What I observed
 
-After training the video tokenizer to epoch 20, codebook utilization was only 117 out of 1024 tokens. The loss was fine (0.0014), but most of the codebook was idle.
+To be honest, the model performance after training is not that good. I only trained on 100 videos and there were no action labels, so the model didn't land on the expected actions. I'm not sure if it should at larger scale as well, considering that most unlabled world model training formulas at big labs right now are VPT-like.
 
-Looking at the generated videos, the agent stays still a lot. The Wanderer holds the same action for 10-30 frames at a time, and if that action doesn't move the player (say, just shooting while facing a wall), you get a long run of identical frames. The other agents had the same problem: nobody checks whether they're actually moving.
+In the first few runs, I had to go through a few collapse scenarios, for example, codebook collapse. At first, I used a codebook size of 1024, but the model only used ~100. This is rather damaging to the dynamics model later on as it has to learn there are plenty of useless tokens to avoid. So I went back and drop the codebook size to 512 and add more invariance penalty. This pushed to 100% codebook utilization and improved the dynamics model drastically. I'm also quite sure I can make the model more robust against action collapse. But my compute is limited. I only reserved 100$ for the entirety of this article.
 
-Doom's visual field makes this worse. At any moment the screen is mostly ceiling, floor, and a wall texture, with the same gun sprite at the bottom. There are maybe 10-20 visually distinct patch types in the whole dataset. 117 codes is close to what you'd expect.
-
-The fix is stuck detection: compare each frame to the previous one, and if pixel-wise mean difference is below a threshold, force a turn. Added to the base `Agent` class in `generate_doom.py`, all four personalities get it automatically. Next dataset generation run will use it.
+If you would like to see more, I'm not shy from receiving compute grants. Reach out to me at binhpham@binhph.am
 
 ## What's Next?
 
