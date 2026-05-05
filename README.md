@@ -1,6 +1,8 @@
 # Learning World Model Learning
 
-![Cover](./assets/root/thumbnail.png)
+[![Live Demo](./assets/3.dynamics/web_demo.gif)](https://pham-tuan-binh.github.io/learning-world-model-learning/)
+
+[▶ Try the Live Demo](https://pham-tuan-binh.github.io/learning-world-model-learning/)
 
 GPT-2 from OpenAI was trained on [40GB or 10 billion tokens of data](https://finbarr.ca/five-years-of-gpt-progress/). This was the accumulation of over 8 million web pages from the internet. Let's assume for the same amount of data, we can train a comparable model for general robotics, here's how much it would cost us:
 
