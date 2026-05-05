@@ -11,6 +11,7 @@ import {
   loadRealRuntime,
   makeFloatTensor,
   makeInt64Tensor,
+  reloadWasmRuntime,
   shouldUsePreviewMode,
 } from "./player.js";
 
@@ -54,6 +55,7 @@ export default function App() {
   const busyRef = useRef(false);
   const heldActionRef = useRef(null);
   const holdLoopRunningRef = useRef(false);
+  const sessionRecoveringRef = useRef(false);
 
   const [manifest, setManifest] = useState(null);
   const [seeds, setSeeds] = useState([]);
@@ -89,7 +91,11 @@ export default function App() {
       tokensRef.current = [seed.tokens.slice()];
       actionsRef.current = [];
       setSteps(0);
-      await decodeCurrentFrame();
+      try {
+        await decodeCurrentFrame();
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : String(error));
+      }
       setLoading((current) => (current.active ? { ...current, active: false } : current));
     },
     [decodeCurrentFrame, seedIndex, seeds],
@@ -137,6 +143,18 @@ export default function App() {
         setStatus(`Ready (${runtimeRef.current.backend}, ${elapsedMs}ms)`);
       } catch (error) {
         setStatus(error instanceof Error ? error.message : String(error));
+        if (!previewMode && !sessionRecoveringRef.current && manifest) {
+          sessionRecoveringRef.current = true;
+          setStatus("Session error — reloading WASM...");
+          try {
+            runtimeRef.current = await reloadWasmRuntime(manifest);
+            setStatus(`Recovered (${runtimeRef.current.backend})`);
+          } catch (recoveryError) {
+            setStatus("Recovery failed — please reload the page.");
+          } finally {
+            sessionRecoveringRef.current = false;
+          }
+        }
       } finally {
         busyRef.current = false;
       }
@@ -318,7 +336,7 @@ export default function App() {
 
   return (
     <main className="flex min-h-screen w-full justify-center px-4 py-6 pb-16 sm:px-6 sm:py-10 lg:py-12">
-      <section className="w-full max-w-[640px]" aria-label="World model player">
+      <section className="w-full max-w-[640px] select-none" aria-label="World model player">
         <header className="mb-6 text-center">
           <img
             src="./assets/doom-1993.gif"
@@ -454,7 +472,7 @@ export default function App() {
           })}
         </div>
 
-        <article className="mt-6 text-base leading-7 text-dark sm:text-lg sm:leading-8">
+        <article className="mt-6 select-text text-base leading-7 text-dark sm:text-lg sm:leading-8">
           <p>
             This is a 7M parameter video world model trained on 100 episodes of Doom
             gameplay generated with VizDoom. You choose an action, and the model

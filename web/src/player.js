@@ -254,6 +254,19 @@ export async function loadRealRuntime(manifest, onProgress) {
   );
 }
 
+export async function reloadWasmRuntime(manifest) {
+  ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
+  const [dynamicsBytes, decoderBytes] = await Promise.all([
+    fetchModelBytes(manifest.dynamicsModel, () => {}),
+    fetchModelBytes(manifest.decoderModel, () => {}),
+  ]);
+  const [dynamics, decoder] = await Promise.all([
+    ort.InferenceSession.create(dynamicsBytes, { executionProviders: ["wasm"] }),
+    ort.InferenceSession.create(decoderBytes, { executionProviders: ["wasm"] }),
+  ]);
+  return { dynamics, decoder, backend: "WASM" };
+}
+
 export async function loadJson(url) {
   const response = await fetch(url);
   if (!response.ok) {
