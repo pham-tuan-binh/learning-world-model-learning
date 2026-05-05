@@ -46,8 +46,6 @@ This is the dynamics model. It is the part that lets an agent choose an action a
 
 If this model ignores actions, it becomes a passive video predictor. If it only memorizes token sequences, it cannot be controlled. The goal here is to train a model that uses both the current visual state and the latent action to predict the next visual state.
 
-![Token Dynamics Transition](../assets/3.dynamics/token_transition.png)
-
 ## The Questions
 
 In honesty, I was struggling to think of first principle questions for this article. We have practically answered all of them in the previous writings.
