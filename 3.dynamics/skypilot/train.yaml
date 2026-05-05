@@ -31,9 +31,16 @@ envs:
   EMBED_DIM: "256"
   NUM_BLOCKS: "6"
   NUM_WORKERS: "8"
-  BATCH_SIZE: "16"
   PATCH_SIZE: "4"
-  LEARNING_RATE: "3e-4"
+  # Stages 1 & 2 process pixels through patch embedding — OOM risk with patch_size=4 (1024 patches).
+  # Stage 3 works on pre-computed tokens — much lighter, can use full batch.
+  # LR scales linearly with batch size (base: 9e-4 at batch=48 → 1.875e-5 per sample).
+  TOK_BATCH_SIZE: "16"
+  TOK_LR: "3e-4"
+  IDM_BATCH_SIZE: "16"
+  IDM_LR: "3e-4"
+  DYN_BATCH_SIZE: "48"
+  DYN_LR: "9e-4"
 
 setup: |
   set -e
@@ -92,8 +99,9 @@ run: |
       --embed-dim "$EMBED_DIM" \
       --num-blocks "$NUM_BLOCKS" \
       --num-workers "$NUM_WORKERS" \
-      --batch-size "$BATCH_SIZE" \
+      --batch-size "$TOK_BATCH_SIZE" \
       --patch-size "$PATCH_SIZE" \
+      --learning-rate "$TOK_LR" \
       --num-epochs 15 \
       --entropy-weight 0.01 \
       "${RESUME_ARGS[@]}"
@@ -113,8 +121,9 @@ run: |
       --embed-dim "$EMBED_DIM" \
       --num-blocks "$NUM_BLOCKS" \
       --num-workers "$NUM_WORKERS" \
-      --batch-size "$BATCH_SIZE" \
+      --batch-size "$IDM_BATCH_SIZE" \
       --patch-size "$PATCH_SIZE" \
+      --learning-rate "$IDM_LR" \
       --n-actions 4 \
       --num-epochs 15 \
       "${RESUME_ARGS[@]}"
@@ -136,10 +145,10 @@ run: |
       --embed-dim "$EMBED_DIM" \
       --num-blocks "$NUM_BLOCKS" \
       --num-workers "$NUM_WORKERS" \
-      --batch-size "$BATCH_SIZE" \
+      --batch-size "$DYN_BATCH_SIZE" \
       --patch-size "$PATCH_SIZE" \
       --num-epochs 70 \
-      --learning-rate "$LEARNING_RATE" \
+      --learning-rate "$DYN_LR" \
       "${RESUME_ARGS[@]}"
   fi
 
