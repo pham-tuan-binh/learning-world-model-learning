@@ -211,9 +211,7 @@ The dynamics model must learn to:
 - Handle occlusions and reappearances
 - Generate consistent predictions over multiple steps
 
-Common architectures include **Transformers** (predict next tokens autoregressively), **MaskGIT** (parallel masked prediction), and **Diffusion models** (iterative denoising). This will be explored in detail in `3.dynamics`.
-
-The in-depth article to answer this question will be released in February.
+Common architectures include **Transformers** (predict next tokens autoregressively), **MaskGIT** (parallel masked prediction), and **Diffusion models** (iterative denoising). This is explored in detail in [3. dynamics](3.dynamics).
 
 ## Landscape of World Model Approaches
 
@@ -283,9 +281,16 @@ learning-world-model-learning/
 │   ├── dynamics/               # Model code (importable module)
 │   ├── checkpoints/
 │   ├── data/
+│   ├── debug/
+│   ├── skypilot/               # Cloud training configs (SkyPilot YAML)
 │   ├── config.py
 │   ├── train.py
 │   ├── validate.py
+│   └── README.md
+├── web/                        # Browser demo of the trained Doom world model
+│   ├── src/                    # React frontend
+│   ├── scripts/                # ONNX export script
+│   ├── dist/                   # Built assets (served via GitHub Pages)
 │   └── README.md
 └── ...
 ```
@@ -301,6 +306,7 @@ Inside each folder, you'll find:
 | `checkpoints/` | Model checkpoints                                          |
 | `data/`        | Dataset files (optional)                                   |
 | `debug/`       | Debugging and inference tools (optional)                   |
+| `skypilot/`    | Cloud training configs for SkyPilot (optional)             |
 | `README.md`    | First-principles explanation                               |
 
 The folder also contains a README which details my thinking process, sources, and intuition. Keep in mind, this is not written for optimization. You'll find a lot of redundant code and bare minimum code. It serves the purpose of building intuition.
