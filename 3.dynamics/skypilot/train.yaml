@@ -37,8 +37,8 @@ envs:
   # LR scales linearly with batch size (base: 9e-4 at batch=48 → 1.875e-5 per sample).
   TOK_BATCH_SIZE: "16"
   TOK_LR: "3e-4"
-  IDM_BATCH_SIZE: "24"
-  IDM_LR: "4.5e-4"
+  IDM_BATCH_SIZE: "16"
+  IDM_LR: "3e-4"
   DYN_BATCH_SIZE: "48"
   DYN_LR: "9e-4"
 
