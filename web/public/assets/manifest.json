@@ -1,0 +1,54 @@
+{
+  "formatVersion": 1,
+  "dynamicsModel": "dynamics.onnx",
+  "decoderModel": "decoder.onnx",
+  "webgpuDynamicsModel": "dynamics.webgpu.onnx",
+  "webgpuDecoderModel": "decoder.webgpu.onnx",
+  "quantized": true,
+  "modelPrecision": "int8-dynamic",
+  "webgpuModelPrecision": "fp32",
+  "executionProviders": [
+    "wasm"
+  ],
+  "frameSize": 128,
+  "numPatches": 1024,
+  "gridSize": 32,
+  "vocabSize": 512,
+  "actionDim": 2,
+  "nActions": 4,
+  "maxContextFrames": 4,
+  "actions": [
+    {
+      "id": 0,
+      "label": "A0",
+      "vector": [
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": 1,
+      "label": "A1",
+      "vector": [
+        1,
+        -1
+      ]
+    },
+    {
+      "id": 2,
+      "label": "A2",
+      "vector": [
+        -1,
+        1
+      ]
+    },
+    {
+      "id": 3,
+      "label": "A3",
+      "vector": [
+        1,
+        1
+      ]
+    }
+  ]
+}
